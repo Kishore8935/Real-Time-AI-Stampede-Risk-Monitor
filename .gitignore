@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.pt
+v3_web/uploads/
+v3_web/uploads/*
+.gemini/

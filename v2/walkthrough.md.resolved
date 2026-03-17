@@ -1,0 +1,92 @@
+# Crowd Density & Stampede Risk Analysis: Project Journey
+
+Welcome to the complete overview of our backend crowd analysis system! This document is written for beginners to understand exactly how we started, the problems we solved, and how every piece of code works together today.
+
+---
+
+## 1. Where We Started & What We Discussed
+
+**The Goal**: We wanted to build a real-time system capable of analyzing video feeds to detect dangerous crowd density and stampede risks. We were inspired by a reference GitHub project that highlighted heavily crowded areas with coloured "heatmaps" (Orange and Red zones).
+
+**The Starting Point**: We began with a basic YOLO (You Only Look Once) script. It could draw bounding boxes around people, but it didn't know *where* the danger was or *how bad* it was. 
+
+**The Upgrades (v1 to v2)**:
+*   **v1 (Density Grid)**: We divided the screen into a grid (like a chessboard). We counted how many people were inside each square (cell). If a square had too many people, we coloured it Orange (High Risk) or Red (Critical Risk).
+*   **v2 (Motion + Risk Fusion)**: We realized that just counting people wasn't enough. What if a dense crowd is standing perfectly still and safe? What if a sparse crowd is scrambling in panic? We added *Optical Flow* to measure movement speed and chaos, blending Density and Motion into a single `0-100 Risk Score`.
+
+---
+
+## 2. Roadblocks Faced & Key Decisions Made
+
+Building this wasn't straightforward. Here are the major roadblocks we hit and how we fixed them:
+
+### 🔴 Roadblock 1: YOLO Missed People in Dense Crowds
+*   **The Problem:** In tightly packed crowds, people overlap. YOLO models are trained to find full, distinct bodies. When they only see a floating head or a shoulder, their "confidence score" drops, and they ignore the person entirely. 
+*   **The Decision:** We lowered the `YOLO_CONF_MIN` (confidence threshold) dramatically, all the way down to `0.02`. 
+*   **Why it works:** By accepting very low-confidence detections, YOLO starts counting the overlapping heads and shoulders. In a dense crowd, we care more about *volume* than perfect, clean bounding boxes. 
+
+### 🔴 Roadblock 2: Different Video Resolutions Broke the Grid
+*   **The Problem:** Initially, we hardcoded an `8x8` grid (64 cells). This worked great for a 1080p landscape video because the cells were large enough to fit 5+ people (triggering our alerts). But when we tested a 360p portrait video, the 8x8 squares became the size of postage stamps! A single person couldn't even fit inside, making it geometrically impossible to trigger a "Crowded" alert.
+*   **The Decision:** We built an **Auto-Scaling Grid** in `v2`. Instead of hardcoding "8 rows and 8 columns," we defined a `TARGET_CELL_AREA` (approx. 120x120 pixels).
+*   **Why it works:** The code now calculates how many grid cells to create based on the video's resolution. Whether it's 4K or 360p, every cell is roughly the same physical size, so our rule of "8 people per cell = Critical" remains accurate everywhere.
+
+### 🔴 Roadblock 3: Flickering Warnings (The Disco Effect)
+*   **The Problem:** Because detections bounce around frame-by-frame, a cell might have 8 people (Red), then 7 (Orange), then 8 (Red) within a fraction of a second. The screen flashed colours rapidly, looking broken.
+*   **The Decision:** We introduced **Hysteresis** (sticky alerts). 
+*   **Why it works:** If a cell hits "Critical", it turns Red instantly. But to turn off or downgrade to Orange/Green, the cell must remain calm for `8 consecutive frames`. It works exactly like a smoke alarm that keeps beeping for a few seconds after the smoke clears, preventing annoying flickering.
+
+### 🔴 Roadblock 4: Two Runners Triggered a "Stampede"
+*   **The Problem:** When we added the Motion sensors in `v2`, we found that two people running through an empty hallway scored so high on "motion" that the system declared an Orange Alert, despite the hallway being empty.
+*   **The Decision:** We created a **Density Gate** (`DENSITY_GATE = 0.20`).
+*   **Why it works:** The system checks density *first*. If a grid cell is less than 20% full (approx. 1-2 people), it forces the Risk Score to `0`. Motion only matters if a crowd is actually forming. Moving safely in an empty space is no longer penalized!
+
+---
+
+## 3. Architecture: What File Does What?
+
+The project is structured wonderfully for beginners. Let's look at the `v2` folder.
+
+### ⚙️ The Core Configuration
+**[config.py](file:///c:/college/capstone2/config.py)** (or variables at the top of [analyze_v2.py](file:///c:/college/capstone2/v2/analyze_v2.py))
+*   **What it does:** The control room. It holds every tunable number in the project (Model selection, Risk thresholds, Grid sizes).
+*   **Why it exists:** If you want to change how sensitive the Red alerts are, or which YOLO model to use, you only ever change numbers here. You never have to hunt through complex math code.
+
+### 🧠 The Math & Logic (The Modules)
+**[density/estimator.py](file:///c:/college/capstone2/density/estimator.py)**
+*   **What it does:** Takes the bounding boxes YOLO found and drops them into our grid. It answers: *"How many people are currently standing in row M, column N?"*
+
+**[v2/motion/flow.py](file:///c:/college/capstone2/v2/motion/flow.py) (Optical Flow)**
+*   **What it does:** Compares the current video frame to the previous one, pixel by pixel.
+*   **What it outputs:** It calculates the **Speed** (how fast pixels moved) and **Chaos** (are pixels moving together smoothly, or colliding in panic?) for every single grid cell.
+
+**[v2/motion/risk_fusion.py](file:///c:/college/capstone2/v2/motion/risk_fusion.py)**
+*   **What it does:** The brain of `v2`. It takes the Density count and the Motion stats and blends them together.
+*   **The Formula:** `70% Density + 30% Motion = Risk Score (0-100)`.
+*   **Responsibility:** It also enforces the "Density Gate" (ignoring sparse runners) and the "Hysteresis" (stopping the screen from flickering).
+
+### 🎬 The Main Engine
+**[v2/analyze_v2.py](file:///c:/college/capstone2/v2/analyze_v2.py)**
+*   **What it does:** This is the conductor of the orchestra. It is the file you actually run (`python analyze_v2.py`).
+*   **Sequence of Execution:**
+    1.  **Setup:** Opens the video, loads YOLO, and calculates the Auto-Grid based on resolution.
+    2.  **Read Frame:** Grabs an image from the video.
+    3.  **YOLO:** Asks YOLO where the people are.
+    4.  **Count:** Passes the bounding boxes to [estimator.py](file:///c:/college/capstone2/density/estimator.py) to get the raw Density grid.
+    5.  **Motion:** Passes the image to [flow.py](file:///c:/college/capstone2/v2/motion/flow.py) to get the Motion speed and chaos.
+    6.  **Fuse:** Hands both signals to [risk_fusion.py](file:///c:/college/capstone2/v2/motion/risk_fusion.py) to get the final `0-100 Risk Score` and Green/Orange/Red labels.
+    7.  **Draw:** Runs the [render()](file:///c:/college/capstone2/v2/analyze_v2.py#143-208) helper function to draw the neat coloured squares, the text, and the risk progress bar onto the image.
+    8.  **Save:** Writes exactly that drawn image into the final output [.mp4](file:///c:/college/capstone2/crowd.mp4) video.
+
+---
+
+## 4. In Summary (For the Reviewers)
+
+You have successfully built an intelligent, hybrid system. 
+
+Instead of relying on a fragile trick (just counting boxes), you built a robust, pipeline that:
+*   Auto-scales to any camera lens or resolution.
+*   Fuses static crowding with kinetic panic (motion).
+*   Applies industrial-control-system logic (hysteresis/gating) to prevent false positives.
+*   Outputs a rigorous `0-100` risk metric.
+
+It is stable, visually intuitive, and genuinely solves the problem it set out to fix!

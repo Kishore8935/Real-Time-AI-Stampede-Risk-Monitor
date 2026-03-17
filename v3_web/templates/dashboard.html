@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — Crowd Risk Monitor</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #0a0d14;
+            --surface: #111724;
+            --surface2: #161d2e;
+            --border: #1e2738;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --green: #22c55e;
+            --green-glow: rgba(34, 197, 94, 0.22);
+            --orange: #f97316;
+            --orange-glow: rgba(249, 115, 22, 0.22);
+            --red: #ef4444;
+            --red-glow: rgba(239, 68, 68, 0.30);
+            --blue: #6366f1;
+            --radius: 14px;
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        html,
+        body {
+            height: 100%;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* ── Header ──────────────────────────────────────────────────── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            flex-shrink: 0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--orange), var(--red));
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .brand h1 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .brand-vid {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            margin-top: 1px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 12px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 100px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            color: var(--green);
+        }
+
+        .live-dot {
+            width: 7px;
+            height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1)
+            }
+
+            50% {
+                opacity: 0.4;
+                transform: scale(0.7)
+            }
+        }
+
+        /* Stop button */
+        .stop-btn {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 16px;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            border-radius: 100px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: var(--red);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .stop-btn:hover {
+            background: rgba(239, 68, 68, 0.22);
+        }
+
+        /* ── Layout ──────────────────────────────────────────────────── */
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 430px;
+            gap: 14px;
+            padding: 14px 24px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Video panel */
+        .video-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #video-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .fps-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(6px);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            padding: 5px 10px;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow-y: auto;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+            transition: border-color 0.4s var(--ease), box-shadow 0.4s var(--ease);
+        }
+
+        .card-title {
+            font-size: 0.66rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        /* Status card */
+        .status-card {
+            text-align: center;
+        }
+
+        .status-card.normal {
+            border-color: var(--green);
+            box-shadow: 0 0 18px var(--green-glow);
+        }
+
+        .status-card.elevated {
+            border-color: var(--orange);
+            box-shadow: 0 0 18px var(--orange-glow);
+        }
+
+        .status-card.critical {
+            border-color: var(--red);
+            box-shadow: 0 0 28px var(--red-glow);
+            animation: pulse-border 1s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulse-border {
+            from {
+                box-shadow: 0 0 18px var(--red-glow)
+            }
+
+            to {
+                box-shadow: 0 0 42px rgba(239, 68, 68, 0.55)
+            }
+        }
+
+        .status-icon {
+            font-size: 2rem;
+            margin-bottom: 6px;
+        }
+
+        .status-text {
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+
+        .status-text.normal {
+            color: var(--green);
+        }
+
+        .status-text.elevated {
+            color: var(--orange);
+        }
+
+        .status-text.critical {
+            color: var(--red);
+        }
+
+        /* Risk score + gauge */
+        .risk-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .risk-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.6rem;
+            font-weight: 600;
+            line-height: 1;
+            transition: color 0.4s;
+        }
+
+        .risk-number.low {
+            color: var(--green);
+        }
+
+        .risk-number.mid {
+            color: var(--orange);
+        }
+
+        .risk-number.high {
+            color: var(--red);
+        }
+
+        .risk-sub {
+            font-size: 0.74rem;
+            color: var(--text-dim);
+        }
+
+        .gauge-track {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 100px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            border-radius: 100px;
+            width: 0%;
+            transition: width 0.4s var(--ease), background 0.4s;
+        }
+
+        .gauge-fill.low {
+            background: linear-gradient(90deg, #16a34a, var(--green));
+        }
+
+        .gauge-fill.mid {
+            background: linear-gradient(90deg, #ea580c, var(--orange));
+        }
+
+        .gauge-fill.high {
+            background: linear-gradient(90deg, #b91c1c, var(--red));
+        }
+
+        /* Timeline chart */
+        .chart-wrap {
+            margin-top: 14px;
+            height: 100px;
+            position: relative;
+        }
+
+        .chart-wrap canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* Stats grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+        }
+
+        .stat-label {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        /* Cell breakdown */
+        .cell-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cell-row:last-child {
+            border-bottom: none;
+        }
+
+        .cell-dot-label {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 0.8rem;
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .dot-green {
+            background: var(--green);
+        }
+
+        .dot-orange {
+            background: var(--orange);
+        }
+
+        .dot-red {
+            background: var(--red);
+        }
+
+        .cell-count {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        /* ── Session Summary Modal ───────────────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 13, 20, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 40px 52px;
+            text-align: center;
+            width: 880px;
+            max-width: 96vw;
+            animation: modalIn 0.4s var(--ease);
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: scale(0.92)
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1)
+            }
+        }
+
+        .modal-icon {
+            font-size: 3rem;
+            margin-bottom: 14px;
+        }
+
+        .modal-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .modal-sub {
+            font-size: 0.86rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        /* Top stat row */
+        .modal-stat-row {
+            display: flex;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 28px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .modal-stat {
+            flex: 1;
+            padding: 16px 10px;
+            border-right: 1px solid var(--border);
+        }
+
+        .modal-stat:last-child {
+            border-right: none;
+        }
+
+        .modal-stat-label {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        .modal-stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.65rem;
+            font-weight: 600;
+        }
+
+        .modal-stat-value.green {
+            color: var(--green);
+        }
+
+        .modal-stat-value.orange {
+            color: var(--orange);
+        }
+
+        .modal-stat-value.red {
+            color: var(--red);
+        }
+
+        /* Risk distribution section */
+        .modal-section-title {
+            font-size: 0.62rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            text-align: left;
+        }
+
+        .dist-bar {
+            height: 12px;
+            border-radius: 100px;
+            overflow: hidden;
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .dist-seg {
+            height: 100%;
+            transition: width 0.6s var(--ease);
+        }
+
+        .dist-seg.seg-green {
+            background: var(--green);
+        }
+
+        .dist-seg.seg-orange {
+            background: var(--orange);
+        }
+
+        .dist-seg.seg-red {
+            background: var(--red);
+        }
+
+        .dist-legend {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 28px;
+        }
+
+        .dist-item {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.78rem;
+        }
+
+        /* Footer */
+        .modal-divider {
+            height: 1px;
+            background: var(--border);
+            margin-bottom: 20px;
+        }
+
+        .modal-home-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 36px;
+            background: linear-gradient(135deg, #6366f1, #818cf8);
+            border: none;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.15s;
+        }
+
+        .modal-home-btn:hover {
+            opacity: 0.85;
+            transform: translateY(-2px);
+        }
+
+        .modal-home-btn:active {
+            transform: translateY(0);
+        }
+
+        /* ── Crowd Pressure card ────────────────────────────── */
+        .pressure-wrap {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 6px;
+        }
+
+        .pressure-gauge {
+            position: relative;
+            width: 72px;
+            height: 72px;
+            flex-shrink: 0;
+        }
+
+        .pressure-gauge svg { transform: rotate(-90deg); }
+
+        .pressure-track { fill: none; stroke: var(--border); stroke-width: 7; }
+
+        .pressure-fill {
+            fill: none;
+            stroke: #22c55e;
+            stroke-width: 7;
+            stroke-linecap: round;
+            stroke-dasharray: 188;   /* circumference of r=30 circle */
+            stroke-dashoffset: 188;  /* starts empty */
+            transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;
+        }
+
+        .pressure-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            /* counteract the svg rotation */
+        }
+
+        .pressure-num {
+            font-size: 1.1rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text);
+        }
+
+        .pressure-unit {
+            font-size: 0.56rem;
+            color: var(--text-dim);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .pressure-info { flex: 1; }
+
+        .pressure-status {
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 12px;
+            display: inline-block;
+            margin-bottom: 5px;
+            background: rgba(34,197,94,0.15);
+            color: #22c55e;
+        }
+
+        .pressure-status.mod  { background: rgba(249,115,22,0.15); color: #f97316; }
+        .pressure-status.high { background: rgba(239,68,68,0.15);  color: #ef4444; }
+
+        .pressure-desc {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+
+        /* Calibration toggle switch */
+        .calib-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input { display: none; }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background: var(--border);
+            border-radius: 24px;
+            cursor: pointer;
+            transition: background 0.25s;
+        }
+
+        .toggle-slider::before {
+            content: "";
+            position: absolute;
+            width: 18px; height: 18px;
+            left: 3px; top: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.25s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider { background: #6366f1; }
+        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+        .calib-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin-top: 6px;
+            margin-bottom: 8px;
+            background: rgba(100,116,139,0.15);
+            color: var(--text-dim);
+        }
+
+        .calib-status-badge.calibrating { background: rgba(234,179,8,0.18);  color: #eab308; }
+        .calib-status-badge.done        { background: rgba(99,102,241,0.18); color: #818cf8; }
+        .calib-status-badge.preset      { background: rgba(100,116,139,0.15); color: var(--text-dim); }
+
+        .calib-weights-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .calib-weight-chip {
+            flex: 1;
+            text-align: center;
+            background: rgba(99,102,241,0.10);
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 8px;
+            padding: 6px 0;
+        }
+
+        .calib-weight-chip .chip-label { font-size: 0.62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+        .calib-weight-chip .chip-value { font-size: 1.1rem; font-weight: 700; color: #818cf8; }
+
+        .calib-progress-track {
+            height: 4px;
+            background: var(--border);
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .calib-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #818cf8);
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+
+        /* ── Light mode overrides ─────────────────────────────────── */
+        body.light {
+            --bg: #f0f4f8;
+            --surface: #ffffff;
+            --surface2: #f8fafc;
+            --border: #cbd5e1;
+            --text: #1e293b;
+            --text-dim: #64748b;
+            --green-glow: rgba(34, 197, 94, 0.18);
+            --orange-glow: rgba(249, 115, 22, 0.18);
+            --red-glow: rgba(239, 68, 68, 0.20);
+        }
+
+        body.light .stat-item {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        body.light .fps-badge {
+            background: rgba(255, 255, 255, 0.8);
+            color: #475569;
+        }
+
+        body.light .modal-overlay {
+            background: rgba(240, 244, 248, 0.90);
+        }
+
+        /* Theme toggle button */
+        .theme-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 6px 14px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        .theme-btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        body.light .theme-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app">
+        <!-- Header -->
+        <header>
+            <div class="brand">
+                <div class="brand-icon">🚦</div>
+                <div>
+                    <h1>Crowd Risk Monitor</h1>
+                    <div class="brand-vid" id="brand-vid">Loading…</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="live-badge">
+                    <div class="live-dot"></div>LIVE
+                </div>
+                <button class="theme-btn" id="theme-btn" onclick="toggleTheme()"
+                    title="Toggle light/dark mode">🌙</button>
+                <button class="stop-btn" id="stop-btn" onclick="stopAnalysis()">
+                    ⏹ Stop Analysis
+                </button>
+            </div>
+        </header>
+
+        <!-- Main layout -->
+        <div class="layout">
+            <!-- Video -->
+            <div class="video-panel">
+                <img id="video-stream" src="/video_feed" alt="Live crowd feed" />
+                <div class="fps-badge" id="fps-badge">FPS: —</div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="sidebar">
+
+                <!-- Status -->
+                <div class="card status-card" id="status-card">
+                    <div class="card-title">Alert Status</div>
+                    <div class="status-icon" id="status-icon">🟢</div>
+                    <div class="status-text normal" id="status-text">Normal</div>
+                </div>
+
+                <!-- Risk Score + Chart -->
+                <div class="card">
+                    <div class="card-title">Risk Score</div>
+                    <div class="risk-row">
+                        <div class="risk-number low" id="risk-number">0</div>
+                        <div class="risk-sub">/ 100</div>
+                    </div>
+                    <div class="gauge-track">
+                        <div class="gauge-fill low" id="gauge-fill"></div>
+                    </div>
+                    <div class="chart-wrap"><canvas id="riskChart"></canvas></div>
+                </div>
+
+                <!-- Stats -->
+                <div class="card">
+                    <div class="card-title">Live Metrics</div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">Persons</div>
+                            <div class="stat-value" id="stat-persons">—</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Proc FPS</div>
+                            <div class="stat-value" id="stat-fps">—</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Grid Rows</div>
+                            <div class="stat-value" id="stat-rows">—</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Grid Cols</div>
+                            <div class="stat-value" id="stat-cols">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cell Breakdown -->
+                <div class="card">
+                    <div class="card-title">Cell Breakdown</div>
+                    <div class="cell-row">
+                        <div class="cell-dot-label">
+                            <div class="dot dot-green"></div>Safe
+                        </div>
+                        <div class="cell-count" id="cell-safe">—</div>
+                    </div>
+                    <div class="cell-row">
+                        <div class="cell-dot-label">
+                            <div class="dot dot-orange"></div>High Risk
+                        </div>
+                        <div class="cell-count" id="cell-high">—</div>
+                    </div>
+                    <div class="cell-row">
+                        <div class="cell-dot-label">
+                            <div class="dot dot-red"></div>Critical
+                        </div>
+                        <div class="cell-count" id="cell-crit">—</div>
+                    </div>
+                </div>
+
+                <!-- Crowd Pressure Card -->
+                <div class="card">
+                    <div class="card-title">Crowd Pressure <span style="font-size:0.65rem;opacity:0.6;font-weight:400">(P = ρ × σᵥ)</span></div>
+                    <div class="pressure-wrap">
+                        <!-- Arc gauge -->
+                        <div class="pressure-gauge">
+                            <svg width="72" height="72" viewBox="0 0 72 72">
+                                <circle class="pressure-track" cx="36" cy="36" r="30"/>
+                                <circle class="pressure-fill" id="pressure-fill" cx="36" cy="36" r="30"/>
+                            </svg>
+                            <div class="pressure-label">
+                                <div class="pressure-num" id="pressure-num">0</div>
+                                <div class="pressure-unit">/100</div>
+                            </div>
+                        </div>
+                        <!-- Info -->
+                        <div class="pressure-info">
+                            <div class="pressure-status" id="pressure-status">Safe</div>
+                            <div class="pressure-desc" id="pressure-desc">
+                                Low density &amp; chaos — no crush risk detected.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auto-Calibration Card -->
+                <div class="card">
+                    <div class="calib-header">
+                        <div class="card-title" style="margin:0">Weight Mode</div>
+                        <label class="toggle-switch" title="Toggle Auto-Calibration">
+                            <input type="checkbox" id="calib-toggle" onchange="toggleCalib(this)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="calib-status-badge preset" id="calib-badge">⚙ Preset 70/30</div>
+
+                    <div class="calib-weights-row">
+                        <div class="calib-weight-chip">
+                            <div class="chip-label">Density</div>
+                            <div class="chip-value" id="chip-density">70%</div>
+                        </div>
+                        <div class="calib-weight-chip">
+                            <div class="chip-label">Motion</div>
+                            <div class="chip-value" id="chip-motion">30%</div>
+                        </div>
+                    </div>
+
+                    <div class="calib-progress-track" id="calib-progress-track">
+                        <div class="calib-progress-fill" id="calib-progress-fill" style="width:0%"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Summary Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-icon">📊</div>
+            <div class="modal-title">Session Analysis Complete</div>
+            <div class="modal-sub" id="modal-sub">Here is a full breakdown of the crowd risk detected during this
+                session.</div>
+
+            <!-- Top stats row -->
+            <div class="modal-stat-row">
+                <div class="modal-stat">
+                    <div class="modal-stat-label">Peak Risk</div>
+                    <div class="modal-stat-value" id="modal-peak">—</div>
+                </div>
+                <div class="modal-stat">
+                    <div class="modal-stat-label">Avg Risk</div>
+                    <div class="modal-stat-value" id="modal-avg">—</div>
+                </div>
+                <div class="modal-stat">
+                    <div class="modal-stat-label">Duration</div>
+                    <div class="modal-stat-value green" id="modal-duration">—</div>
+                </div>
+                <div class="modal-stat">
+                    <div class="modal-stat-label">Frames</div>
+                    <div class="modal-stat-value green" id="modal-frames">—</div>
+                </div>
+                <div class="modal-stat">
+                    <div class="modal-stat-label">Peak Status</div>
+                    <div class="modal-stat-value" id="modal-peak-status">—</div>
+                </div>
+            </div>
+
+            <!-- Risk distribution bar -->
+            <div class="modal-section-title">Risk Level Distribution (% of session time)</div>
+            <div class="dist-bar">
+                <div class="dist-seg seg-green" id="dist-green"></div>
+                <div class="dist-seg seg-orange" id="dist-orange"></div>
+                <div class="dist-seg seg-red" id="dist-red"></div>
+            </div>
+            <div class="dist-legend">
+                <div class="dist-item">
+                    <div class="dot dot-green"></div> <span id="dist-pct-green">—%</span> Normal
+                </div>
+                <div class="dist-item">
+                    <div class="dot dot-orange"></div> <span id="dist-pct-orange">—%</span> Elevated
+                </div>
+                <div class="dist-item">
+                    <div class="dot dot-red"></div> <span id="dist-pct-red">—%</span> Critical
+                </div>
+            </div>
+
+            <div class="modal-divider"></div>
+            <button class="modal-home-btn" onclick="window.location.href='/'">
+                🏠 Go Home
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // ── Chart.js setup ─────────────────────────────────────────────
+        const MAX_POINTS = 120;          // ~60 seconds at 500ms polling
+        const chartLabels = [];
+        const chartData = [];
+
+        const ctx = document.getElementById('riskChart').getContext('2d');
+        const riskChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    data: chartData,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.35,
+                    fill: true,
+                    segment: {
+                        borderColor: seg => {
+                            const v = seg.p1.raw;
+                            return v >= 65 ? '#ef4444' : v >= 35 ? '#f97316' : '#22c55e';
+                        },
+                        backgroundColor: seg => {
+                            const v = seg.p1.raw;
+                            return v >= 65 ? 'rgba(239,68,68,0.12)' :
+                                v >= 35 ? 'rgba(249,115,22,0.10)' :
+                                    'rgba(34,197,94,0.08)';
+                        },
+                    },
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        min: 0, max: 100,
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        ticks: {
+                            color: '#4a5568', font: { size: 9, family: 'JetBrains Mono' },
+                            stepSize: 25,
+                        },
+                    },
+                },
+            },
+        });
+
+        // ── DOM refs ───────────────────────────────────────────────────
+        const statusCard = document.getElementById('status-card');
+        const statusIcon = document.getElementById('status-icon');
+        const statusText = document.getElementById('status-text');
+        const riskNumber = document.getElementById('risk-number');
+        const gaugeFill = document.getElementById('gauge-fill');
+        const fpsBadge = document.getElementById('fps-badge');
+        const brandVid = document.getElementById('brand-vid');
+        const els = {
+            persons: document.getElementById('stat-persons'),
+            fps: document.getElementById('stat-fps'),
+            rows: document.getElementById('stat-rows'),
+            cols: document.getElementById('stat-cols'),
+            safe: document.getElementById('cell-safe'),
+            high: document.getElementById('cell-high'),
+            crit: document.getElementById('cell-crit'),
+        };
+
+        function getTier(s) { const u = s.toUpperCase(); return u.includes('CRITICAL') ? 'critical' : u.includes('HIGH') || u.includes('WARNING') || u.includes('ELEVATED') ? 'elevated' : 'normal'; }
+        function riskTier(n) { return n >= 65 ? 'high' : n >= 35 ? 'mid' : 'low'; }
+        const icons = { normal: '🟢', elevated: '🟠', critical: '🔴' };
+
+        // ── Session tracker (for distribution stats in modal) ────────────
+        const session = { low: 0, mid: 0, high: 0, totalRisk: 0, polls: 0, avgPersons: 0 };
+        let pollTimer = null;
+
+        function startPolling() {
+            async function poll() {
+                try {
+                    const d = await fetch('/api/stats').then(r => r.json());
+                    if (!d.active) return;
+
+                    const tier = getTier(d.status);
+                    const rt = riskTier(d.risk_score);
+                    const total = (d.grid_rows || 1) * (d.grid_cols || 1);
+                    const safe = Math.max(0, total - d.high_cells - d.critical_cells);
+
+                    statusCard.className = `card status-card ${tier}`;
+                    statusIcon.textContent = icons[tier];
+                    statusText.textContent = d.status;
+                    statusText.className = `status-text ${tier}`;
+
+                    riskNumber.textContent = d.risk_score.toFixed(1);
+                    riskNumber.className = `risk-number ${rt}`;
+                    gaugeFill.style.width = `${d.risk_score}%`;
+                    gaugeFill.className = `gauge-fill ${rt}`;
+
+                    fpsBadge.textContent = `FPS: ${d.fps}`;
+                    brandVid.textContent = d.current_video || '—';
+                    els.persons.textContent = d.person_count;
+                    els.fps.textContent = d.fps;
+                    els.rows.textContent = d.grid_rows;
+                    els.cols.textContent = d.grid_cols;
+                    els.safe.textContent = safe;
+                    els.high.textContent = d.high_cells;
+                    els.crit.textContent = d.critical_cells;
+
+                    // ── Crowd Pressure gauge ──────────────────────────────
+                    if (d.avg_pressure !== undefined) {
+                        const p = d.avg_pressure;
+                        const CIRC = 188; // 2π × r=30
+                        const offset = CIRC - (p / 100) * CIRC;
+                        const pfill  = document.getElementById('pressure-fill');
+                        const pnum   = document.getElementById('pressure-num');
+                        const pstat  = document.getElementById('pressure-status');
+                        const pdesc  = document.getElementById('pressure-desc');
+
+                        pfill.style.strokeDashoffset = offset.toFixed(1);
+                        pnum.textContent = Math.round(p);
+
+                        if (p >= 50) {
+                            pfill.style.stroke = '#ef4444';
+                            pstat.className    = 'pressure-status high';
+                            pstat.textContent  = '⚠ Crush Risk';
+                            pdesc.textContent  = 'High density + directional chaos detected. Physical crush pressure is critical.';
+                        } else if (p >= 25) {
+                            pfill.style.stroke = '#f97316';
+                            pstat.className    = 'pressure-status mod';
+                            pstat.textContent  = '⚡ Moderate';
+                            pdesc.textContent  = 'Elevated pressure — crowd is dense with some directional conflict.';
+                        } else {
+                            pfill.style.stroke = '#22c55e';
+                            pstat.className    = 'pressure-status';
+                            pstat.textContent  = 'Safe';
+                            pdesc.textContent  = 'Low density & chaos — no crush risk detected.';
+                        }
+                    }
+
+                    // Push to chart
+                    chartLabels.push('');
+                    chartData.push(d.risk_score);
+                    if (chartData.length > MAX_POINTS) { chartLabels.shift(); chartData.shift(); }
+                    riskChart.update();
+
+                    // Accumulate session stats
+                    session.polls++;
+                    session.totalRisk += d.risk_score;
+                    session.avgPersons += d.person_count;
+                    if (rt === 'high') session.high++;
+                    else if (rt === 'mid') session.mid++;
+                    else session.low++;
+
+                    // ── Update calibration card ────────────────────────────
+                    if (d.calib_mode !== undefined) {
+                        const badge   = document.getElementById('calib-badge');
+                        const track   = document.getElementById('calib-progress-track');
+                        const fill    = document.getElementById('calib-progress-fill');
+                        const chipD   = document.getElementById('chip-density');
+                        const chipM   = document.getElementById('chip-motion');
+
+                        chipD.textContent = (d.density_weight ?? 70) + '%';
+                        chipM.textContent = (d.motion_weight  ?? 30) + '%';
+
+                        if (d.calib_status === 'calibrating') {
+                            badge.className = 'calib-status-badge calibrating';
+                            badge.textContent = `⏳ Calibrating… (${d.calib_samples_collected || 0}/${d.calib_sample_target || '?'})`;
+                            track.style.display = 'block';
+                            const pct = Math.min(95, Math.round(
+                                ((d.calib_samples_collected || 0) / (d.calib_sample_target || 100)) * 100
+                            ));
+                            fill.style.width = pct + '%';
+                        } else if (d.calib_status === 'done') {
+                            badge.className = 'calib-status-badge done';
+                            badge.textContent = '✅ Calibrated';
+                            track.style.display = 'none';
+                        } else {
+                            badge.className = 'calib-status-badge preset';
+                            badge.textContent = '⚙ Preset 70/30';
+                            track.style.display = 'none';
+                        }
+                    }
+
+                } catch (_) { }
+            }
+            poll();
+            pollTimer = setInterval(poll, 500);
+        }
+
+        startPolling();
+
+        // ── Theme toggle ────────────────────────────────────────────
+        const themeBtn = document.getElementById('theme-btn');
+        function applyTheme(light) {
+            document.body.classList.toggle('light', light);
+            themeBtn.textContent = light ? '🌙' : '☀️';
+            themeBtn.title = light ? 'Switch to dark mode' : 'Switch to light mode';
+        }
+        function toggleTheme() {
+            const isLight = !document.body.classList.contains('light');
+            localStorage.setItem('crm-theme', isLight ? 'light' : 'dark');
+            applyTheme(isLight);
+        }
+        // Restore saved preference
+        applyTheme(localStorage.getItem('crm-theme') === 'light');
+
+        // ── Calibration toggle ───────────────────────────────────
+        async function toggleCalib(checkbox) {
+            const endpoint = checkbox.checked
+                ? '/api/calibration-mode/on'
+                : '/api/calibration-mode/off';
+            await fetch(endpoint, { method: 'POST' });
+            // Reset chip display immediately
+            if (!checkbox.checked) {
+                document.getElementById('chip-density').textContent = '70%';
+                document.getElementById('chip-motion').textContent  = '30%';
+                const badge = document.getElementById('calib-badge');
+                badge.className   = 'calib-status-badge preset';
+                badge.textContent = '⚙ Preset 70/30';
+                document.getElementById('calib-progress-track').style.display = 'none';
+            } else {
+                const badge = document.getElementById('calib-badge');
+                badge.className   = 'calib-status-badge calibrating';
+                badge.textContent = '⏳ Waiting for next upload…';
+            }
+        }
+
+        // Sync toggle state from server on page load
+        fetch('/api/stats').then(r => r.json()).then(d => {
+            const toggle = document.getElementById('calib-toggle');
+            if (toggle && d.calib_mode !== undefined) {
+                toggle.checked = d.calib_mode;
+            }
+        }).catch(() => {});
+
+        // ── Stop / Cancel ─────────────────────────────────────────────
+        async function stopAnalysis() {
+            document.getElementById('stop-btn').disabled = true;
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+
+            try {
+                const res = await fetch('/cancel', { method: 'POST' });
+                const data = await res.json();
+
+                // Compute distribution percentages from our session tracker
+                const total = session.polls || 1;
+                const pctLow = Math.round((session.low / total) * 100);
+                const pctMid = Math.round((session.mid / total) * 100);
+                const pctHigh = Math.round((session.high / total) * 100);
+                const avgRisk = session.polls > 0 ? (session.totalRisk / session.polls).toFixed(1) : '0';
+
+                // Populate modal stats
+                const peakEl = document.getElementById('modal-peak');
+                peakEl.textContent = `${data.peak_risk}`;
+                peakEl.className = `modal-stat-value ${data.peak_risk >= 65 ? 'red' : data.peak_risk >= 35 ? 'orange' : 'green'}`;
+
+                const avgEl = document.getElementById('modal-avg');
+                avgEl.textContent = avgRisk;
+                avgEl.className = `modal-stat-value ${Number(avgRisk) >= 65 ? 'red' : Number(avgRisk) >= 35 ? 'orange' : 'green'}`;
+
+                document.getElementById('modal-duration').textContent = `${data.duration_s}s`;
+                document.getElementById('modal-frames').textContent = data.frames;
+
+                const peakStatEl = document.getElementById('modal-peak-status');
+                const peakTier = data.peak_status.toUpperCase().includes('CRITICAL') ? 'red'
+                    : data.peak_status.toUpperCase().includes('HIGH') ? 'orange' : 'green';
+                peakStatEl.textContent = data.peak_status.replace('CRITICAL RISK', 'CRITICAL').replace('Normal', 'NORMAL');
+                peakStatEl.className = `modal-stat-value ${peakTier}`;
+                peakStatEl.style.fontSize = '0.85rem';
+
+                // Risk distribution bar
+                document.getElementById('dist-green').style.width = `${pctLow}%`;
+                document.getElementById('dist-orange').style.width = `${pctMid}%`;
+                document.getElementById('dist-red').style.width = `${pctHigh}%`;
+                document.getElementById('dist-pct-green').textContent = `${pctLow}%`;
+                document.getElementById('dist-pct-orange').textContent = `${pctMid}%`;
+                document.getElementById('dist-pct-red').textContent = `${pctHigh}%`;
+
+                document.getElementById('modal-overlay').classList.add('active');
+
+
+
+            } catch (err) {
+                alert('Failed to stop: ' + err.message);
+                document.getElementById('stop-btn').disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

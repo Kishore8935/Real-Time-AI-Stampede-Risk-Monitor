@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real Time AI Based Stampede Risk Monitor</title>
+    <meta name="description" content="Real-time stampede risk analysis powered by YOLO object detection and optical flow motion analysis." />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:         #080c14;
+            --surface:    #0f1623;
+            --surface2:   #141e30;
+            --border:     #1e2d45;
+            --text:       #e2e8f0;
+            --text-dim:   #94a3b8;
+            --text-muted: #475569;
+            --blue:       #6366f1;
+            --blue-b:     #818cf8;
+            --green:      #22c55e;
+            --orange:     #f97316;
+            --red:        #ef4444;
+            --radius:     16px;
+            --ease:       cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        body.light {
+            --bg: #f0f4f8; --surface: #ffffff; --surface2: #f8fafc;
+            --border: #cbd5e1; --text: #1e293b; --text-dim: #64748b; --text-muted: #94a3b8;
+        }
+
+        html, body {
+            height: 100%; font-family: 'Inter', sans-serif;
+            background: var(--bg); color: var(--text);
+            overflow-x: hidden; transition: background 0.3s, color 0.3s;
+        }
+
+        /* ── BG glow ── */
+        .bg-glow {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background: radial-gradient(ellipse 60% 45% at 30% 20%, rgba(99,102,241,0.10) 0%, transparent 70%),
+                        radial-gradient(ellipse 50% 40% at 70% 70%, rgba(34,197,94,0.05)  0%, transparent 60%);
+        }
+
+        /* ── Top bar ── */
+        .topbar {
+            position: sticky; top: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 24px;
+            background: rgba(8,12,20,0.85); backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--border);
+        }
+        body.light .topbar { background: rgba(240,244,248,0.85); }
+        .topbar-brand { display: flex; align-items: center; gap: 10px; }
+        .topbar-icon  { font-size: 1.4rem; }
+        .topbar-name  { font-size: 0.95rem; font-weight: 700; }
+        .theme-btn {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 6px 10px; cursor: pointer;
+            font-size: 1rem; color: var(--text); transition: background 0.2s;
+        }
+        .theme-btn:hover { background: var(--border); }
+
+        /* ── Page ── */
+        .page {
+            position: relative; z-index: 1;
+            max-width: 1100px; margin: 0 auto;
+            padding: 40px 20px 60px;
+        }
+
+        /* ── Hero ── */
+        .hero { text-align: center; margin-bottom: 36px; }
+        .pill-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+        .pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-radius: 20px; font-size: 0.72rem; font-weight: 600;
+            background: var(--surface); border: 1px solid var(--border);
+        }
+        .pill-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .pill-dot.blue   { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+        .pill-dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .pill-dot.orange { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+        .hero-title { font-size: clamp(1.6rem,4vw,2.8rem); font-weight: 800; line-height: 1.15; margin-bottom: 12px; }
+        .grad { background: linear-gradient(135deg, var(--blue), var(--blue-b), var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .hero-sub { font-size: 0.88rem; color: var(--text-dim); max-width: 560px; margin: 0 auto 20px; line-height: 1.7; }
+        .features { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+        .feat { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-dim); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; }
+        .feat-icon { font-size: 0.9rem; }
+
+        /* ── Two-column body ── */
+        .body-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 720px) { .body-grid { grid-template-columns: 1fr; } }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 20px;
+        }
+        .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+        .card-header-icon { font-size: 1.4rem; }
+        .card-header-text h2 { font-size: 1rem; font-weight: 700; }
+        .card-header-text p  { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+        .config-title { font-size: 0.78rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
+
+        /* ── Drop zone ── */
+        .drop-zone {
+            position: relative; border: 2px dashed var(--border);
+            border-radius: 12px; padding: 30px 20px; text-align: center;
+            margin-bottom: 14px; cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--blue); background: rgba(99,102,241,0.05); }
+        .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+        .drop-icon  { font-size: 2rem; margin-bottom: 8px; }
+        .drop-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 4px; }
+        .drop-hint  { font-size: 0.72rem; color: var(--text-dim); }
+
+        .file-preview {
+            display: none; align-items: center; gap: 12px;
+            background: rgba(99,102,241,0.07); border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
+        }
+        .file-preview.visible { display: flex; }
+        .file-preview-icon { font-size: 1.5rem; }
+        .file-name { font-size: 0.82rem; font-weight: 600; word-break: break-all; }
+        .file-size { font-size: 0.70rem; color: var(--text-dim); margin-top: 2px; }
+
+        .analyse-btn {
+            width: 100%; padding: 14px;
+            background: linear-gradient(135deg, var(--blue), var(--blue-b));
+            border: none; border-radius: 11px; font-family: 'Inter', sans-serif;
+            font-size: 0.95rem; font-weight: 700; color: #fff; cursor: pointer;
+            transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+            box-shadow: 0 4px 20px rgba(99,102,241,0.35);
+        }
+        .analyse-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+        .analyse-btn:not(:disabled):hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99,102,241,0.45); }
+
+        .upload-progress { display: none; margin-top: 14px; }
+        .upload-progress.visible { display: block; }
+        .progress-label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 8px; }
+        .progress-track { height: 5px; background: var(--border); border-radius: 100px; overflow: hidden; }
+        .progress-bar   { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--blue), var(--blue-b)); animation: indeterminate 1.4s ease-in-out infinite; }
+        @keyframes indeterminate {
+            0%   { width: 12%; margin-left: 0%; }
+            50%  { width: 40%; margin-left: 35%; }
+            100% { width: 12%; margin-left: 88%; }
+        }
+
+        /* ── Config Controls ── */
+
+        /* Section dividers */
+        .cfg-section { margin-bottom: 20px; }
+        .cfg-section:last-child { margin-bottom: 0; }
+        .cfg-section-label {
+            font-size: 0.68rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.1em;
+            margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+        }
+
+        /* Toggle row */
+        .toggle-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; margin-bottom: 10px;
+        }
+        .toggle-row-left { display: flex; flex-direction: column; gap: 1px; }
+        .toggle-label { font-size: 0.80rem; font-weight: 600; }
+        .toggle-hint  { font-size: 0.65rem; color: var(--text-dim); }
+
+        /* Toggle switch */
+        .toggle-switch { position: relative; width: 42px; height: 23px; flex-shrink: 0; }
+        .toggle-switch input { display: none; }
+        .toggle-slider {
+            position: absolute; inset: 0; background: var(--border);
+            border-radius: 23px; cursor: pointer; transition: background 0.25s;
+        }
+        .toggle-slider::before {
+            content: ""; position: absolute;
+            width: 17px; height: 17px; left: 3px; top: 3px;
+            background: #fff; border-radius: 50%; transition: transform 0.25s;
+        }
+        .toggle-switch input:checked + .toggle-slider                   { background: var(--blue); }
+        .toggle-switch input:checked + .toggle-slider::before           { transform: translateX(19px); }
+        .toggle-switch.green input:checked + .toggle-slider             { background: var(--green); }
+
+        /* Slider rows */
+        .slider-row { margin-bottom: 12px; }
+        .slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .slider-name  { font-size: 0.78rem; font-weight: 600; }
+        .slider-value { font-size: 0.72rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--blue-b); }
+
+        input[type="range"] {
+            -webkit-appearance: none; width: 100%; height: 5px;
+            border-radius: 5px; outline: none; cursor: pointer;
+            background: linear-gradient(to right, var(--blue) 0%, var(--blue) var(--pct, 70%), var(--border) var(--pct, 70%), var(--border) 100%);
+            transition: background 0.2s;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px;
+            border-radius: 50%; background: var(--blue-b);
+            box-shadow: 0 0 6px rgba(99,102,241,0.6);
+        }
+
+        /* Bias display (density vs motion) split bar */
+        .bias-split {
+            display: flex; gap: 0; border-radius: 6px; overflow: hidden;
+            height: 20px; margin-top: 6px; font-size: 0.60rem; font-weight: 700;
+        }
+        .bias-density { background: rgba(99,102,241,0.4); display: flex; align-items: center; justify-content: center; color: var(--blue-b); transition: width 0.2s; }
+        .bias-motion  { background: rgba(249,115,22,0.35); display: flex; align-items: center; justify-content: center; color: var(--orange); flex: 1; transition: width 0.2s; }
+
+        /* Pressure info badge */
+        .pressure-info-bar {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.68rem; color: var(--text-dim);
+            background: rgba(34,197,94,0.07); border: 1px solid rgba(34,197,94,0.2);
+            border-radius: 8px; padding: 7px 10px; margin-top: 4px;
+        }
+        .pressure-info-bar.off { background: rgba(71,85,105,0.2); border-color: var(--border); }
+
+        /* Dropdown */
+        .styled-select {
+            width: 100%; padding: 8px 12px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text); font-family: 'Inter', sans-serif;
+            font-size: 0.80rem; cursor: pointer; outline: none;
+            transition: border-color 0.2s;
+        }
+        .styled-select:focus { border-color: var(--blue); }
+
+        /* Number input */
+        .num-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .num-label { font-size: 0.78rem; font-weight: 600; flex: 1; }
+        .num-hint  { font-size: 0.60rem; color: var(--text-dim); }
+        .styled-num {
+            width: 70px; padding: 6px 10px; text-align: center;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text); font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem; outline: none; transition: border-color 0.2s;
+        }
+        .styled-num:focus { border-color: var(--blue); }
+
+        /* Advanced accordion */
+        .adv-toggle-btn {
+            width: 100%; padding: 8px 0; background: none; border: none;
+            color: var(--text-dim); font-size: 0.72rem; font-weight: 600;
+            cursor: pointer; text-align: left; display: flex; align-items: center; gap: 6px;
+            transition: color 0.2s;
+        }
+        .adv-toggle-btn:hover { color: var(--text); }
+        .adv-arrow { transition: transform 0.25s; }
+        .adv-toggle-btn.open .adv-arrow { transform: rotate(90deg); }
+        .adv-body { display: none; padding-top: 14px; }
+        .adv-body.visible { display: block; }
+
+        /* ── Footer ── */
+        .footer { margin-top: 40px; text-align: center; font-size: 0.70rem; color: var(--text-muted); line-height: 1.7; }
+        .footer span { color: var(--text-dim); font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div class="bg-glow"></div>
+
+    <nav class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-icon">🚦</div>
+            <div class="topbar-name">Stampede Risk Monitor</div>
+        </div>
+        <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+    </nav>
+
+    <div class="page">
+        <!-- Hero -->
+        <div class="hero">
+            <div class="pill-row">
+                <span class="pill"><span class="pill-dot blue"></span>YOLO v11</span>
+                <span class="pill"><span class="pill-dot green"></span>Optical Flow</span>
+                <span class="pill"><span class="pill-dot orange"></span>Crowd Pressure</span>
+            </div>
+            <h1 class="hero-title">Real-Time AI<br><span class="grad">Stampede Risk Monitor</span></h1>
+            <p class="hero-sub">Upload a crowd video, configure the analysis parameters, and get instant stampede risk analysis with cell-by-cell density mapping, motion chaos detection, and crowd pressure scoring.</p>
+            <div class="features">
+                <div class="feat"><span class="feat-icon">🧠</span>YOLO Object Detection</div>
+                <div class="feat"><span class="feat-icon">🌊</span>Farneback Optical Flow</div>
+                <div class="feat"><span class="feat-icon">🗜️</span>Crowd Pressure (P=ρ×σᵥ)</div>
+                <div class="feat"><span class="feat-icon">📊</span>Live Risk Timeline</div>
+            </div>
+        </div>
+
+        <!-- Main body: two columns -->
+        <div class="body-grid">
+
+            <!-- Left: Upload card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-icon">📂</div>
+                    <div class="card-header-text">
+                        <h2>Start Analysis</h2>
+                        <p>Upload any crowd video to begin</p>
+                    </div>
+                </div>
+
+                <div class="drop-zone" id="drop-zone">
+                    <input type="file" id="file-input" accept="video/*" />
+                    <div class="drop-icon">🎬</div>
+                    <div class="drop-title">Click or drag a video here</div>
+                    <div class="drop-hint">MP4 · MOV · AVI &nbsp;·&nbsp; Any resolution</div>
+                </div>
+
+                <div class="file-preview" id="file-preview">
+                    <div class="file-preview-icon">🎥</div>
+                    <div>
+                        <div class="file-name" id="file-name">—</div>
+                        <div class="file-size" id="file-size">—</div>
+                    </div>
+                </div>
+
+                <button class="analyse-btn" id="analyse-btn" disabled>Analyse Video →</button>
+
+                <div class="upload-progress" id="upload-progress">
+                    <div class="progress-label" id="progress-label">Uploading…</div>
+                    <div class="progress-track">
+                        <div class="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Configuration Panel -->
+            <div style="display:flex; flex-direction:column; gap:14px;">
+
+                <!-- Card 1: Risk Weights -->
+                <div class="card">
+                    <div class="config-title">⚖️ Risk Formula Weights</div>
+
+                    <!-- Auto-Calibration -->
+                    <div class="cfg-section">
+                        <div class="toggle-row">
+                            <div class="toggle-row-left">
+                                <div class="toggle-label">Auto-Calibration</div>
+                                <div class="toggle-hint">Tunes weights from first 8s of video</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="auto-calib-toggle" onchange="onCalibToggle()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Density vs Motion bias slider -->
+                    <div class="cfg-section" id="bias-section">
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span class="slider-name">Density ↔ Motion Bias</span>
+                                <span class="slider-value" id="bias-val">70 / 30</span>
+                            </div>
+                            <input type="range" id="bias-slider" min="10" max="90" value="70" oninput="onBiasChange(this.value)" />
+                            <div class="bias-split">
+                                <div class="bias-density" id="bias-density-bar" style="width:70%">Density 70%</div>
+                                <div class="bias-motion"  id="bias-motion-bar">Motion 30%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Crowd Pressure Toggle -->
+                    <div class="cfg-section">
+                        <div class="toggle-row">
+                            <div class="toggle-row-left">
+                                <div class="toggle-label">Crowd Pressure Signal</div>
+                                <div class="toggle-hint">P = ρ × σᵥ &nbsp;·&nbsp; Takes 25% of risk score when ON</div>
+                            </div>
+                            <label class="toggle-switch green">
+                                <input type="checkbox" id="pressure-toggle" checked onchange="onPressureToggle()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="pressure-info-bar" id="pressure-info">
+                            🗜️ When ON: Density & Motion share 75%, Pressure takes 25%. Distinguishes calm queues from dangerous crushes.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: Visuals -->
+                <div class="card">
+                    <div class="config-title">🎨 Visual Settings</div>
+
+                    <!-- Overlay Transparency -->
+                    <div class="slider-row">
+                        <div class="slider-header">
+                            <span class="slider-name">Overlay Transparency</span>
+                            <span class="slider-value" id="alpha-val">Medium (0.20)</span>
+                        </div>
+                        <input type="range" id="alpha-slider" min="5" max="60" value="20" oninput="onAlphaChange(this.value)" />
+                    </div>
+
+                    <!-- Grid Size -->
+                    <div class="slider-row">
+                        <div class="slider-header" style="margin-bottom:8px">
+                            <span class="slider-name">Grid Resolution</span>
+                        </div>
+                        <select class="styled-select" id="grid-select">
+                            <option value="coarse">Coarse — Large cells (fast, less detail)</option>
+                            <option value="standard" selected>Standard — Balanced (default)</option>
+                            <option value="detailed">Detailed — Small cells (precise, slower)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Card 3: Advanced Settings (accordion) -->
+                <div class="card">
+                    <button class="adv-toggle-btn" id="adv-btn" onclick="toggleAdv()">
+                        <span class="adv-arrow">▶</span> Advanced Sensitivity Settings
+                    </button>
+                    <div class="adv-body" id="adv-body">
+                        <div class="config-title" style="margin-bottom:12px">🔬 Sensitivity Thresholds</div>
+
+                        <!-- Critical Density Limit -->
+                        <div class="num-row">
+                            <div>
+                                <div class="num-label">Critical Density Limit</div>
+                                <div class="num-hint">People per cell = 100% density</div>
+                            </div>
+                            <input type="number" class="styled-num" id="thresh-critical" value="8" min="2" max="30" />
+                        </div>
+
+                        <!-- High Alert Threshold -->
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span class="slider-name">🟠 High Alert Trigger</span>
+                                <span class="slider-value" id="high-thr-val">50%</span>
+                            </div>
+                            <input type="range" id="high-thr-slider" min="20" max="80" value="50" oninput="onHighThrChange(this.value)" />
+                        </div>
+
+                        <!-- Critical Alert Threshold -->
+                        <div class="slider-row">
+                            <div class="slider-header">
+                                <span class="slider-name">🔴 Critical Alert Trigger</span>
+                                <span class="slider-value" id="crit-thr-val">75%</span>
+                            </div>
+                            <input type="range" id="crit-thr-slider" min="40" max="95" value="75" oninput="onCritThrChange(this.value)" />
+                        </div>
+
+                        <!-- Hysteresis -->
+                        <div class="num-row">
+                            <div>
+                                <div class="num-label">Alert Stickiness</div>
+                                <div class="num-hint">Frames alert stays on after crowd clears</div>
+                            </div>
+                            <input type="number" class="styled-num" id="hysteresis" value="8" min="0" max="60" />
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- end right column -->
+        </div><!-- end body-grid -->
+
+        <div class="footer">
+            Capstone Project · 2026 &nbsp;·&nbsp; <span>YOLOv11n</span> + <span>Farneback Optical Flow</span> + <span>FastAPI</span>
+        </div>
+    </div>
+
+    <script>
+        // ── Theme ──────────────────────────────────────────────────────────────
+        const themeBtn = document.getElementById('theme-btn');
+        function applyTheme(light) {
+            document.body.classList.toggle('light', light);
+            themeBtn.textContent = light ? '🌙' : '☀️';
+        }
+        function toggleTheme() {
+            const isLight = !document.body.classList.contains('light');
+            localStorage.setItem('crm-theme', isLight ? 'light' : 'dark');
+            applyTheme(isLight);
+        }
+        applyTheme(localStorage.getItem('crm-theme') === 'light');
+
+        // ── Config controls ────────────────────────────────────────────────────
+
+        function onCalibToggle() {
+            const on = document.getElementById('auto-calib-toggle').checked;
+            document.getElementById('bias-section').style.opacity = on ? '0.4' : '1';
+            document.getElementById('bias-section').style.pointerEvents = on ? 'none' : '';
+        }
+
+        function onBiasChange(v) {
+            const d = parseInt(v), m = 100 - d;
+            document.getElementById('bias-val').textContent = `${d} / ${m}`;
+            const bar = document.getElementById('bias-density-bar');
+            bar.style.width = d + '%';
+            bar.textContent = `Density ${d}%`;
+            document.getElementById('bias-motion-bar').textContent = `Motion ${m}%`;
+            // Update slider track gradient
+            document.getElementById('bias-slider').style.setProperty('--pct', `${d}%`);
+        }
+        onBiasChange(70);
+
+        function onPressureToggle() {
+            const on = document.getElementById('pressure-toggle').checked;
+            const bar = document.getElementById('pressure-info');
+            bar.className = 'pressure-info-bar' + (on ? '' : ' off');
+            bar.textContent = on
+                ? '🗜️ When ON: Density & Motion share 75%, Pressure takes 25%. Distinguishes calm queues from dangerous crushes.'
+                : '⚡ When OFF: Full 100% shared between Density and Motion only.';
+        }
+
+        function onAlphaChange(v) {
+            const pct = parseInt(v);
+            const label = pct <= 15 ? 'Low' : pct <= 30 ? 'Medium' : 'High';
+            document.getElementById('alpha-val').textContent = `${label} (${(pct/100).toFixed(2)})`;
+            document.getElementById('alpha-slider').style.setProperty('--pct', `${((pct-5)/55*100).toFixed(0)}%`);
+        }
+        onAlphaChange(20);
+
+        function onHighThrChange(v) {
+            document.getElementById('high-thr-val').textContent = `${v}%`;
+            document.getElementById('high-thr-slider').style.setProperty('--pct', `${((v-20)/60*100).toFixed(0)}%`);
+        }
+        onHighThrChange(50);
+
+        function onCritThrChange(v) {
+            document.getElementById('crit-thr-val').textContent = `${v}%`;
+            document.getElementById('crit-thr-slider').style.setProperty('--pct', `${((v-40)/55*100).toFixed(0)}%`);
+        }
+        onCritThrChange(75);
+
+        function toggleAdv() {
+            const btn = document.getElementById('adv-btn');
+            const body = document.getElementById('adv-body');
+            btn.classList.toggle('open');
+            body.classList.toggle('visible');
+        }
+
+        // ── Upload ──────────────────────────────────────────────────────────────
+        let selectedFile = null;
+        const fileInput = document.getElementById('file-input');
+        const dropZone  = document.getElementById('drop-zone');
+        const preview   = document.getElementById('file-preview');
+        const nameEl    = document.getElementById('file-name');
+        const sizeEl    = document.getElementById('file-size');
+        const btn       = document.getElementById('analyse-btn');
+        const prog      = document.getElementById('upload-progress');
+        const label     = document.getElementById('progress-label');
+
+        fileInput.addEventListener('change', () => selectFile(fileInput.files[0]));
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault(); dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+        });
+
+        function selectFile(file) {
+            if (!file) return;
+            selectedFile = file;
+            nameEl.textContent = file.name;
+            sizeEl.textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+            preview.classList.add('visible');
+            btn.disabled = false;
+        }
+
+        btn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            btn.disabled = true;
+            prog.classList.add('visible');
+            label.textContent = `Uploading "${selectedFile.name}"…`;
+
+            try {
+                // Bundle file + all config values into FormData
+                const form = new FormData();
+                form.append('file', selectedFile);
+
+                // Core weights
+                const biasRaw = parseInt(document.getElementById('bias-slider').value) / 100;
+                form.append('density_bias',     biasRaw.toFixed(2));
+                form.append('pressure_enabled', document.getElementById('pressure-toggle').checked ? 'true' : 'false');
+                form.append('auto_calib',       document.getElementById('auto-calib-toggle').checked ? 'true' : 'false');
+
+                // Visuals
+                const alphaRaw = parseInt(document.getElementById('alpha-slider').value) / 100;
+                form.append('overlay_alpha', alphaRaw.toFixed(2));
+                form.append('grid_size',     document.getElementById('grid-select').value);
+
+                // Advanced
+                form.append('thresh_critical', document.getElementById('thresh-critical').value);
+                form.append('high_score_thr',  (parseInt(document.getElementById('high-thr-slider').value) / 100).toFixed(2));
+                form.append('crit_score_thr',  (parseInt(document.getElementById('crit-thr-slider').value) / 100).toFixed(2));
+                form.append('hysteresis',      document.getElementById('hysteresis').value);
+
+                const res = await fetch('/upload', { method: 'POST', body: form });
+                if (!res.ok) throw new Error('Upload failed');
+
+                label.textContent = 'Starting analysis engine…';
+                await new Promise(r => setTimeout(r, 1500));
+                window.location.href = '/dashboard';
+
+            } catch (err) {
+                label.textContent = '❌ ' + err.message;
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
