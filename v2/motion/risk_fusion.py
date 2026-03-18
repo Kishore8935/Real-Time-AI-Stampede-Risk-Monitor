@@ -123,6 +123,7 @@ class RiskFusion:
         # ── Step 2: Normalise motion ─────────────────────────────────────────
         motion_norm = np.clip(motion_grid / self.max_motion, 0.0, 1.0)
         chaos_norm  = np.clip(chaos_grid  / 2.0,             0.0, 1.0)
+        #chaos_norm = np.clip(chaos_grid / 1.2, 0.0, 1.0)
 
         # Combine speed and chaos into one motion component
         motion_component = 0.6 * motion_norm + 0.4 * chaos_norm

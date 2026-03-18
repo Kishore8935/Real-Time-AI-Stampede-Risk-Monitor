@@ -147,6 +147,29 @@
             background: rgba(239, 68, 68, 0.22);
         }
 
+        /* Flow overlay toggle button */
+        .flow-toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 16px;
+            background: rgba(99, 102, 241, 0.10);
+            border: 1px solid rgba(99, 102, 241, 0.30);
+            border-radius: 100px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: #818cf8;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .flow-toggle-btn:hover { background: rgba(99, 102, 241, 0.20); }
+        .flow-toggle-btn.active {
+            background: rgba(99, 102, 241, 0.25);
+            border-color: #818cf8;
+            box-shadow: 0 0 12px rgba(99,102,241,0.35);
+        }
+
         /* ── Layout ──────────────────────────────────────────────────── */
         .app {
             display: flex;
@@ -843,6 +866,9 @@
                 <div class="live-badge">
                     <div class="live-dot"></div>LIVE
                 </div>
+                <button class="flow-toggle-btn" id="flow-toggle-btn" onclick="toggleFlowOverlay()" title="Toggle optical flow vector overlay">
+                    🌊 Flow Vectors
+                </button>
                 <button class="theme-btn" id="theme-btn" onclick="toggleTheme()"
                     title="Toggle light/dark mode">🌙</button>
                 <button class="stop-btn" id="stop-btn" onclick="stopAnalysis()">
@@ -953,6 +979,39 @@
                     </div>
                 </div>
 
+                <!-- Vector Field: Divergence & Curl -->
+                <div class="card">
+                    <div class="card-title">🌊 Flow Field Physics</div>
+                    <!-- Divergence row -->
+                    <div style="margin-bottom:10px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                            <span style="font-size:0.68rem;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;text-transform:uppercase">Divergence</span>
+                            <span style="font-size:0.60rem;color:var(--text-muted);">∂vx/∂x + ∂vy/∂y</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <div style="flex:1;height:6px;background:var(--surface2);border-radius:4px;overflow:hidden">
+                                <div id="div-bar" style="height:100%;width:50%;background:var(--green);border-radius:4px;transition:width 0.4s,background 0.4s"></div>
+                            </div>
+                            <span id="div-badge" style="font-size:0.60rem;font-weight:700;padding:1px 7px;border-radius:10px;background:rgba(34,197,94,0.15);color:#22c55e">Dispersing</span>
+                        </div>
+                        <div id="div-desc" style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">Crowd spreading outward — safe flow.</div>
+                    </div>
+                    <!-- Curl row -->
+                    <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                            <span style="font-size:0.68rem;color:var(--text-dim);font-weight:600;letter-spacing:0.05em;text-transform:uppercase">Curl / Turbulence</span>
+                            <span style="font-size:0.60rem;color:var(--text-muted);">∂vy/∂x − ∂vx/∂y</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <div style="flex:1;height:6px;background:var(--surface2);border-radius:4px;overflow:hidden">
+                                <div id="curl-bar" style="height:100%;width:0%;background:var(--blue);border-radius:4px;transition:width 0.4s,background 0.4s"></div>
+                            </div>
+                            <span id="curl-num" style="font-size:0.68rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text-dim)">—</span>
+                        </div>
+                        <div id="curl-desc" style="font-size:0.62rem;color:var(--text-muted);margin-top:3px">No rotational swirl detected.</div>
+                    </div>
+                </div>
+
                 <!-- Auto-Calibration Card -->
                 <div class="card">
                     <div class="calib-header">
@@ -1037,7 +1096,7 @@
             </div>
 
             <div class="modal-divider"></div>
-            <button class="modal-home-btn" onclick="window.location.href='/'">
+            <button class="modal-home-btn" onclick="goHome()">
                 🏠 Go Home
             </button>
         </div>
@@ -1115,6 +1174,26 @@
         function riskTier(n) { return n >= 65 ? 'high' : n >= 35 ? 'mid' : 'low'; }
         const icons = { normal: '🟢', elevated: '🟠', critical: '🔴' };
 
+        // ── Optical Flow Overlay Toggle ──────────────────────────────────
+        let _flowOverlayOn = false;
+        async function toggleFlowOverlay() {
+            _flowOverlayOn = !_flowOverlayOn;
+            const endpoint = _flowOverlayOn ? '/api/flow-overlay/on' : '/api/flow-overlay/off';
+            await fetch(endpoint, { method: 'POST' });
+            const btn = document.getElementById('flow-toggle-btn');
+            btn.classList.toggle('active', _flowOverlayOn);
+            btn.textContent = _flowOverlayOn ? '🌊 Flow ON' : '🌊 Flow Vectors';
+        }
+
+        // ── Go Home: save session config for landing page to restore ────
+        async function goHome() {
+            try {
+                const cfg = await fetch('/api/session-config').then(r => r.json());
+                localStorage.setItem('crm-last-session-config', JSON.stringify(cfg));
+            } catch(e) { /* no-op: still navigate even if fetch fails */ }
+            window.location.href = '/';
+        }
+
         // ── Session tracker (for distribution stats in modal) ────────────
         const session = { low: 0, mid: 0, high: 0, totalRisk: 0, polls: 0, avgPersons: 0 };
         let pollTimer = null;
@@ -1178,6 +1257,67 @@
                             pstat.className    = 'pressure-status';
                             pstat.textContent  = 'Safe';
                             pdesc.textContent  = 'Low density & chaos — no crush risk detected.';
+                        }
+                    }
+
+                    // ── Divergence & Curl ─────────────────────────────────────
+                    if (d.avg_divergence !== undefined) {
+                        const divVal = d.avg_divergence;   // negative = squeeze, positive = dispersing
+                        const divBar  = document.getElementById('div-bar');
+                        const divBadge = document.getElementById('div-badge');
+                        const divDesc = document.getElementById('div-desc');
+
+                        // Map divergence to a 0-100 bar where 50=neutral
+                        // clamp raw value to roughly [-0.5, 0.5] range for the bar
+                        const divPct = Math.min(100, Math.max(0, (divVal + 0.5) / 1.0 * 100));
+                        divBar.style.width = divPct + '%';
+
+                        if (divVal < -0.05) {
+                            // Negative divergence = inward squeeze
+                            divBar.style.background = '#ef4444';
+                            divBadge.style.background = 'rgba(239,68,68,0.15)';
+                            divBadge.style.color = '#ef4444';
+                            divBadge.textContent = '⚠ Squeezing';
+                            divDesc.textContent = 'Crowd converging inward — potential crush zone forming.';
+                        } else if (divVal > 0.05) {
+                            // Positive divergence = dispersing
+                            divBar.style.background = '#22c55e';
+                            divBadge.style.background = 'rgba(34,197,94,0.15)';
+                            divBadge.style.color = '#22c55e';
+                            divBadge.textContent = 'Dispersing';
+                            divDesc.textContent = 'Crowd spreading outward — safe flow detected.';
+                        } else {
+                            divBar.style.background = '#f97316';
+                            divBadge.style.background = 'rgba(249,115,22,0.15)';
+                            divBadge.style.color = '#f97316';
+                            divBadge.textContent = '~ Neutral';
+                            divDesc.textContent = 'Balanced flow — no dominant directional surge.';
+                        }
+                    }
+
+                    if (d.avg_curl !== undefined) {
+                        const curlVal = d.avg_curl;
+                        const curlBar  = document.getElementById('curl-bar');
+                        const curlNum  = document.getElementById('curl-num');
+                        const curlDesc = document.getElementById('curl-desc');
+
+                        // Curl values are always positive (abs magnitude). Scale 0-0.5 → 0-100%
+                        const curlPct = Math.min(100, (curlVal / 0.5) * 100);
+                        curlBar.style.width = curlPct + '%';
+                        curlNum.textContent = curlVal.toFixed(3);
+
+                        if (curlPct > 60) {
+                            curlBar.style.background = '#ef4444';
+                            curlDesc.textContent = 'High rotational turbulence — swirling vortex pattern in crowd.';
+                            curlDesc.style.color = '#ef4444';
+                        } else if (curlPct > 25) {
+                            curlBar.style.background = '#f97316';
+                            curlDesc.textContent = 'Moderate swirl — some rotational conflict at bottleneck edges.';
+                            curlDesc.style.color = '#f97316';
+                        } else {
+                            curlBar.style.background = 'var(--blue)';
+                            curlDesc.textContent = 'No significant rotational swirl detected.';
+                            curlDesc.style.color = 'var(--text-muted)';
                         }
                     }
 

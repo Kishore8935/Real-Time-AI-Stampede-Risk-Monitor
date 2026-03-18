@@ -20,9 +20,20 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 import uvicorn
+import json
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env file automatically
+
+# Optional: new Gemini AI SDK (google-genai)
+try:
+    from google import genai
+    _GEMINI_AVAILABLE = True
+except ImportError:
+    _GEMINI_AVAILABLE = False
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -101,6 +112,10 @@ _calib_status        = "off"      # "off" | "calibrating" | "done"
 _active_density_w    = DENSITY_WEIGHT
 _active_motion_w     = MOTION_WEIGHT
 
+# ── Optical Flow Overlay state ────────────────────────────────────────────────
+_show_flow_overlay   = False      # Toggled by the dashboard UI
+_latest_flow_field   = None       # Stores the last (H, W, 2) flow array
+
 # Hot-swap / cancel signals
 _next_video_path = None
 _new_video_event = threading.Event()
@@ -159,6 +174,51 @@ def render_frame(frame, risk_labels, risk_scores,
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 230, 255), 2, cv2.LINE_AA)
     return frame
 
+
+def draw_flow_overlay(frame, flow_field, grid_rows, grid_cols, cell_w, cell_h, scale=1.0):
+    """
+    Draw sampled optical flow arrows onto the frame.
+    One arrow per grid cell, showing average X/Y direction.
+    flow_field: (H, W, 2) in small-frame pixel units.
+    scale: the inverse of OpticalFlowAnalyzer.scale (to convert back to native pixels).
+    """
+    if flow_field is None:
+        return
+    fh, fw = flow_field.shape[:2]
+    step_y = max(1, fh // grid_rows)
+    step_x = max(1, fw // grid_cols)
+
+    # Arrow amplification: makes small movements visible on screen
+    AMPLIFY = 6.0
+
+    for r in range(grid_rows):
+        for c in range(grid_cols):
+            # Sample center of cell in the small (downscaled) frame
+            sy = int((r + 0.5) * step_y)
+            sx = int((c + 0.5) * step_x)
+            sy = min(sy, fh - 1)
+            sx = min(sx, fw - 1)
+
+            dx = float(flow_field[sy, sx, 0]) * AMPLIFY / max(scale, 1e-6)
+            dy = float(flow_field[sy, sx, 1]) * AMPLIFY / max(scale, 1e-6)
+
+            # Native-pixel center of this grid cell on the output frame
+            cx = int((c + 0.5) * cell_w)
+            cy = int((r + 0.5) * cell_h)
+            ex = int(cx + dx)
+            ey = int(cy + dy)
+
+            # Skip negligible arrows (static cells) — avoids noise
+            mag = (dx ** 2 + dy ** 2) ** 0.5
+            if mag < 2.0:
+                continue
+
+            # Color arrows cyan for normal, orange for fast movement (mag > 20)
+            color = (0, 165, 255) if mag > 20 else (0, 230, 255)
+            cv2.arrowedLine(frame, (cx, cy), (ex, ey), color, 2,
+                            tipLength=max(0.15, 10.0 / max(mag, 1)))
+
+
 # =============================================================================
 # Background processing thread
 # =============================================================================
@@ -166,7 +226,7 @@ def processing_thread():
     global _latest_frame_jpg, _latest_stats, _next_video_path, _processing_active
     global _session_peak_risk, _session_peak_status, _session_start_time, _session_frames
     global _calib_status, _active_density_w, _active_motion_w, _calib_mode_enabled
-    global _session_config
+    global _session_config, _latest_flow_field
 
     print("[v3] YOLO loading…")
     model = YOLO(YOLO_MODEL)
@@ -280,8 +340,12 @@ def processing_thread():
         last_risk_scores      = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.float32)
         last_risk_labels      = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.int32)
         last_pressure_grid    = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.float32)
+        last_divergence_grid  = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.float32)
+        last_curl_grid        = np.zeros((GRID_ROWS, GRID_COLS), dtype=np.float32)
         last_global_score     = 0.0
         last_avg_pressure     = 0.0
+        last_avg_divergence   = 0.0   # scene-level squeeze signal (negative = dangerous)
+        last_avg_curl         = 0.0   # scene-level swirl/turbulence signal
         last_scene_status     = "Normal"
         last_count            = 0
         last_fps              = 0.0
@@ -310,7 +374,16 @@ def processing_thread():
                     smoothed         = smoother.update(last_raw_density)
                     history.update(smoothed, last_risk_labels)
 
-                    motion_grid, chaos_grid, _flow_field = flow_analyzer.update(frame)
+                    motion_grid, chaos_grid, last_divergence_grid, last_curl_grid, _flow_field = \
+                        flow_analyzer.update(frame)
+
+                    # Compute scene-level divergence and curl averages
+                    # For divergence: use min (most negative = most squeeze) across top 25% worst cells
+                    flat_div = last_divergence_grid.flatten()
+                    last_avg_divergence = float(np.mean(np.sort(flat_div)[:max(1, len(flat_div)//4)]))
+                    # For curl: top 25% strongest swirl cells
+                    flat_curl = last_curl_grid.flatten()
+                    last_avg_curl = float(np.mean(np.sort(flat_curl)[::-1][:max(1, len(flat_curl)//4)]))
 
                     # ── Auto-Calibration: collect baseline samples ────────────
                     if _calib_mode_enabled and _calib_status == "calibrating":
@@ -366,11 +439,23 @@ def processing_thread():
                               f"Risk Score: {last_global_score:.1f}/100  |  "
                               f"Persons: {last_count}")
 
+                # Update latest flow field for the overlay renderer
+                with _lock:
+                    _latest_flow_field = _flow_field
+
                 out = render_frame(
                     frame.copy(), last_risk_labels, last_risk_scores,
                     last_count, last_fps, GRID_ROWS, GRID_COLS, cell_w, cell_h,
                     overlay_alphas=session_overlay_alphas
                 )
+                # Draw optical flow arrows on top when toggled on
+                if _show_flow_overlay:
+                    with _lock:
+                        ff = _latest_flow_field
+                    draw_flow_overlay(
+                        out, ff, GRID_ROWS, GRID_COLS, cell_w, cell_h,
+                        scale=flow_analyzer.scale
+                    )
                 ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if not ok:
                     continue
@@ -391,8 +476,13 @@ def processing_thread():
                         "grid_rows":               GRID_ROWS,
                         "grid_cols":               GRID_COLS,
                         "current_video":           video_name,
-                        # Crowd Pressure (new signal)
+                        # Crowd Pressure
                         "avg_pressure":            round(last_avg_pressure, 1),
+                        # Divergence & Curl (new physics signals)
+                        # divergence: negative = crowd squeezing inward (dangerous)
+                        # we send it as a 0-100 "squeeze intensity" where 50=neutral
+                        "avg_divergence":          round(last_avg_divergence, 3),
+                        "avg_curl":                round(last_avg_curl, 3),
                         # Calibration fields
                         "calib_mode":              _calib_mode_enabled,
                         "calib_status":            _calib_status,
@@ -562,6 +652,172 @@ def calib_mode_off():
     _active_motion_w    = MOTION_WEIGHT
     print("[calib] Auto-calibration mode DISABLED — weights reset to 70/30")
     return JSONResponse({"status": "ok", "calib_mode": False})
+
+
+@app.post("/api/flow-overlay/on")
+def flow_overlay_on():
+    global _show_flow_overlay
+    _show_flow_overlay = True
+    print("[flow] Optical flow overlay ENABLED")
+    return JSONResponse({"status": "ok", "flow_overlay": True})
+
+
+@app.post("/api/flow-overlay/off")
+def flow_overlay_off():
+    global _show_flow_overlay
+    _show_flow_overlay = False
+    print("[flow] Optical flow overlay DISABLED")
+    return JSONResponse({"status": "ok", "flow_overlay": False})
+
+
+@app.get("/api/session-config")
+def get_session_config():
+    """
+    Returns the _session_config used for the last (or current) analysis.
+    The landing page uses this to restore all sliders/toggles after Go Home.
+    """
+    with _lock:
+        cfg = _session_config.copy()
+    return JSONResponse(cfg)
+
+
+# =============================================================================
+# AI Parameter Suggestion (Mode B — Gemini)
+# =============================================================================
+
+_AI_SYSTEM_PROMPT = """
+You are an expert crowd dynamics engineer specializing in stampede risk analysis.
+You use Keith Still's mathematical crowd pressure model: P = ρ × σᵥ (local density × directional velocity chaos).
+
+The user will describe the deployment scenario in plain English. They may also provide an image of the physical space.
+Your job: select optimal configuration parameters for a real-time stampede risk monitoring system.
+
+If an image is provided, carefully analyze it for:
+- Narrow corridors, chokepoints, or funnels (raise density sensitivity, lower thresholds)
+- Open areas or plazas (use coarser grid, slightly higher thresholds)
+- Elevated camera positions vs. ground level (adjust thresh_critical for apparent density)
+- Crowd ingress/egress points (bottleneck awareness)
+Mention your visual observations briefly in the explanation field.
+
+IMPORTANT: Respond with ONLY valid raw JSON. No markdown fences, no explanations outside the JSON object.
+Be conservative — it is far better to warn early than to miss a crush event.
+
+Return exactly this JSON schema:
+{
+  "density_bias": <float 0.10–0.90>,
+  "pressure_enabled": <true|false>,
+  "grid_size": <"coarse"|"standard"|"detailed">,
+  "thresh_critical": <int 2–30>,
+  "high_score_thr": <float 0.20–0.80>,
+  "crit_score_thr": <float 0.40–0.95>,
+  "overlay_alpha": <float 0.05–0.60>,
+  "hysteresis": <int 0–60>,
+  "explanation": <one sentence why you chose these settings, mentioning visual observations if image provided>
+}
+
+Guidelines:
+- Narrow corridors / bottlenecks: density_bias 0.75+, thresh_critical 6–8, low alert thresholds.
+- Open festivals / pilgrimages: density_bias 0.55–0.65, pressure ON, coarse grid.
+- Transit (subway / train): density_bias 0.70+, pressure OFF (transit bumping → false positives).
+- Drone / top-down cameras: raise thresh_critical by 30–50% (cells cover more real-world area).
+- Concerts / mosh pits: pressure crucial, density_bias 0.45–0.55.
+- Always ensure crit_score_thr > high_score_thr by at least 0.15.
+"""
+
+
+@app.post("/api/ai-configure")
+async def ai_configure(request: Request):
+    """
+    Mode B: AI Parameter Suggestion with optional image context.
+    Body: { "prompt": "<plain English venue description>", "image_base64": "<optional data URL or raw b64>" }
+    Returns: JSON with all slider/threshold values + a one-sentence explanation.
+    """
+    if not _GEMINI_AVAILABLE:
+        return JSONResponse({"error": "google-generativeai not installed. Run: pip install google-generativeai"}, status_code=503)
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return JSONResponse({"error": "GEMINI_API_KEY environment variable not set."}, status_code=503)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    user_prompt = body.get("prompt", "").strip()
+    if not user_prompt:
+        return JSONResponse({"error": "Empty prompt"}, status_code=400)
+
+    image_b64 = body.get("image_base64", "").strip()
+
+    # ── Build Gemini content list ────────────────────────────────────────────
+    full_text = _AI_SYSTEM_PROMPT.strip() + "\n\nUser scenario: " + user_prompt
+    contents = [full_text]
+
+    if image_b64:
+        try:
+            import base64 as _b64, io as _io
+            from PIL import Image as _PILImage
+
+            # Strip data-URL prefix if present (e.g. "data:image/jpeg;base64,")
+            if "," in image_b64:
+                image_b64 = image_b64.split(",", 1)[1]
+
+            img_bytes = _b64.b64decode(image_b64)
+            pil_img   = _PILImage.open(_io.BytesIO(img_bytes)).convert("RGB")
+
+            # Gemini's new SDK accepts PIL Images directly in the contents list
+            contents.append(pil_img)
+            print(f"[ai-configure] Image received: {pil_img.size[0]}x{pil_img.size[1]}px, sending to Gemini vision.")
+        except ImportError:
+            print("[ai-configure] Pillow not installed — image ignored. Run: pip install pillow")
+        except Exception as e:
+            print(f"[ai-configure] Could not decode image — skipping: {e}")
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        # Using the standard reliable model for the new SDK
+        # contents is a list: [text_prompt] or [text_prompt, pil_image] for vision
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=contents,
+        )
+        
+        raw = response.text.strip()
+
+        # Strip markdown fences if LLM wraps output in ```json ... ```
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].lstrip("json").strip()
+
+        config = json.loads(raw)
+
+        # Validate required keys are present
+        required = [
+            "density_bias", "pressure_enabled", "grid_size", "thresh_critical",
+            "high_score_thr", "crit_score_thr", "overlay_alpha", "hysteresis", "explanation"
+        ]
+        missing = [k for k in required if k not in config]
+        if missing:
+            return JSONResponse({"error": f"LLM response missing keys: {missing}"}, status_code=500)
+
+        # Clamp all numeric values to safe ranges
+        config["density_bias"]    = max(0.10, min(0.90, float(config["density_bias"])))
+        config["high_score_thr"] = max(0.20, min(0.80, float(config["high_score_thr"])))
+        config["crit_score_thr"] = max(config["high_score_thr"] + 0.10, min(0.95, float(config["crit_score_thr"])))
+        config["overlay_alpha"]  = max(0.05, min(0.60, float(config["overlay_alpha"])))
+        config["thresh_critical"] = max(2, min(30, int(config["thresh_critical"])))
+        config["hysteresis"]      = max(0, min(60, int(config["hysteresis"])))
+        if config["grid_size"] not in ("coarse", "standard", "detailed"):
+            config["grid_size"] = "standard"
+
+        print(f"[AI] Configured for: {user_prompt[:60]}... → {config}")
+        return JSONResponse(config)
+
+    except json.JSONDecodeError as e:
+        return JSONResponse({"error": f"LLM returned invalid JSON: {e}"}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":
