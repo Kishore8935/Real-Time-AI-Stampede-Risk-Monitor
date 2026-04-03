@@ -1,22 +1,25 @@
 import DashboardHeader     from '../components/dashboard/DashboardHeader'
-import VideoPanel           from '../components/dashboard/VideoPanel'
-import StatusCard           from '../components/dashboard/StatusCard'
-import RiskScoreCard        from '../components/dashboard/RiskScoreCard'
-import LiveMetricsCard      from '../components/dashboard/LiveMetricsCard'
-import CellBreakdownCard    from '../components/dashboard/CellBreakdownCard'
-import PressureCard         from '../components/dashboard/PressureCard'
-import FlowFieldCard        from '../components/dashboard/FlowFieldCard'
-import CalibrationCard      from '../components/dashboard/CalibrationCard'
-import SessionSummaryModal  from '../components/dashboard/SessionSummaryModal'
+import VideoPanel          from '../components/dashboard/VideoPanel'
+import StatusCard          from '../components/dashboard/StatusCard'
+import RiskScoreCard       from '../components/dashboard/RiskScoreCard'
+import LiveMetricsCard     from '../components/dashboard/LiveMetricsCard'
+import CellBreakdownCard   from '../components/dashboard/CellBreakdownCard'
+import PressureCard        from '../components/dashboard/PressureCard'
+import FlowFieldCard       from '../components/dashboard/FlowFieldCard'
+import CalibrationCard     from '../components/dashboard/CalibrationCard'
+import SessionSummaryModal from '../components/dashboard/SessionSummaryModal'
 
-import { useRiskStats } from '../hooks/useRiskStats'
-import { useSession }   from '../hooks/useSession'
+import { useParams }       from 'react-router-dom'
+import { useRiskStats }    from '../hooks/useRiskStats'
+import { useSession }      from '../hooks/useSession'
 
 async function setCalibMode(enabled) {
   await fetch(`/api/calibration-mode/${enabled ? 'on' : 'off'}`, { method: 'POST' })
 }
 
 export default function DashboardPage() {
+  const { sessionId } = useParams()
+  // In Phase 3, we will use this sessionId to fetch past data instead of live stats
   const { stats, history } = useRiskStats(500)
   const { showModal, summary, goHome, stopAnalysis, flowOverlay, toggleFlowOverlay } = useSession()
 
