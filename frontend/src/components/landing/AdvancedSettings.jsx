@@ -5,7 +5,7 @@ export default function AdvancedSettings({ config, onUpdate }) {
   const { thresh, highThr, critThr, hyst } = config
 
   return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] p-5">
+    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]" style={{ padding: '32px' }}>
       {/* Accordion toggle */}
       <button
         onClick={() => setOpen(o => !o)}

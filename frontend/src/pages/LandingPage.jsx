@@ -18,65 +18,86 @@ export default function LandingPage() {
   const upload = useVideoUpload(config)
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)]">
-      {/* Background glow */}
-      <div className="fixed inset-0 z-0 pointer-events-none"
-        style={{
-          background: `radial-gradient(ellipse 60% 45% at 30% 20%, rgba(99,102,241,0.10) 0%, transparent 70%),
-                       radial-gradient(ellipse 50% 40% at 70% 70%, rgba(34,197,94,0.05)  0%, transparent 60%)`
-        }} />
+    <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
+      {/* Background radial glow — centred behind hero */}
+      <div className="fixed inset-0 z-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 70% 50% at 50% -5%, rgba(99,102,241,0.13) 0%, transparent 65%)'
+      }} />
 
       <TopBar />
 
-      <div className="relative z-10 max-w-[1400px] mx-auto px-5 py-10 pb-16">
-        {/* Hero */}
-        <div className="text-center mb-9">
-          <div className="flex justify-center gap-2 mb-4 flex-wrap">
-            {[
-              { color: 'var(--color-blue)',   label: 'YOLOv11' },
-              { color: 'var(--color-green)',  label: 'Optical Flow' },
-              { color: 'var(--color-orange)', label: 'Crowd Pressure' },
-            ].map(({ color, label }) => (
-              <span key={label}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[0.72rem] font-semibold
-                           bg-[var(--color-surface)] border border-[var(--color-border)]">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
-                {label}
-              </span>
-            ))}
+      <main className="relative z-10" style={{ maxWidth: 1440, margin: '0 auto', padding: '0 32px 80px' }}>
+
+        {/* ══════════════ HERO ══════════════ */}
+        <section style={{ textAlign: 'center', padding: '52px 0 44px' }}>
+
+          {/* Eyebrow */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '5px 14px', borderRadius: 999, marginBottom: 20,
+            background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.30)',
+            fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.14em',
+            color: 'var(--color-blue-b)', textTransform: 'uppercase' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%',
+              background: 'var(--color-blue)', display: 'inline-block',
+              animation: 'pulse-dot 1.5s ease-in-out infinite' }} />
+            Capstone Research Project · 2026
           </div>
 
-          <h1 className="text-[clamp(1.6rem,4vw,2.8rem)] font-extrabold leading-tight mb-3">
-            Real-Time AI<br />
-            <span className="bg-gradient-to-br from-[var(--color-blue)] via-[var(--color-blue-b)] to-[var(--color-green)]
-                             bg-clip-text text-transparent">
+          {/* Title — two distinct lines */}
+          <h1 style={{ fontSize: 'clamp(1.9rem, 4vw, 3rem)', fontWeight: 800,
+            lineHeight: 1.15, letterSpacing: '-0.02em',
+            margin: '0 auto 16px', maxWidth: 700 }}>
+            Real-Time AI-Powered
+            <br />
+            <span style={{
+              background: 'linear-gradient(90deg, #6366f1, #818cf8 45%, #22c55e)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
+            }}>
               Stampede Risk Monitor
             </span>
           </h1>
-          <p className="text-[0.88rem] text-[var(--color-text-dim)] max-w-[560px] mx-auto mb-5 leading-relaxed">
-            Upload a crowd video, configure the analysis parameters, and get instant stampede risk
-            analysis with cell-by-cell density mapping, motion chaos detection, and crowd pressure scoring.
+
+          {/* Subtitle — inline style guarantees centering */}
+          <p style={{ fontSize: '0.92rem', lineHeight: 1.75, maxWidth: 500,
+            margin: '0 auto 28px', textAlign: 'center',
+            color: 'var(--color-text-dim)', fontWeight: 300 }}>
+            Upload a crowd video, tune parameters with Gemini AI, and get
+            live stampede risk scores — cell-by-cell, frame-by-frame.
           </p>
 
-          <div className="flex justify-center flex-wrap gap-2.5">
+          {/* Tech pills */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
             {[
-              ['🧠', 'YOLO Object Detection'],
-              ['🌊', 'Farneback Optical Flow'],
-              ['🗜️', 'Crowd Pressure (P=ρ×σᵥ)'],
-              ['📊', 'Live Risk Timeline'],
-            ].map(([icon, text]) => (
-              <div key={text}
-                className="flex items-center gap-1.5 text-[0.75rem] text-[var(--color-text-dim)]
-                           bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-2.5 py-1.5">
-                <span>{icon}</span>{text}
-              </div>
+              { emoji: '🧠', text: 'YOLOv11' },
+              { emoji: '🌊', text: 'Optical Flow' },
+              { emoji: '🗜️', text: 'Crowd Pressure' },
+              { emoji: '🤖', text: 'Gemini AI' },
+              { emoji: '⚡', text: 'FastAPI' },
+            ].map(({ emoji, text }) => (
+              <span key={text} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '5px 13px', borderRadius: 999,
+                background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                fontSize: '0.73rem', fontWeight: 500, color: 'var(--color-text-dim)'
+              }}>
+                {emoji} {text}
+              </span>
             ))}
           </div>
+        </section>
+
+        {/* ══════════════ DIVIDER ══════════════ */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
+          <span style={{ fontSize: '0.62rem', color: 'var(--color-text-muted)',
+            letterSpacing: '0.14em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+            Configure &amp; Analyse
+          </span>
+          <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
         </div>
 
-        {/* 3-Column Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
-          {/* Col 1: Upload */}
+        {/* ══════════════ CARD GRID ══════════════ */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
           <VideoUpload
             selectedFile={upload.selectedFile}
             onSelectFile={upload.selectFile}
@@ -86,49 +107,43 @@ export default function LandingPage() {
             onSaveSettings={saveSettings}
             onResetSettings={resetSettings}
           />
-
-          {/* Col 2: Presets + AI */}
-          <div className="flex flex-col gap-5">
-            <QuickPresets
-              activePreset={activePreset}
-              appliedLabel={appliedLabel}
-              onApplyPreset={applyPreset}
-            />
-            <AIAssistant
-              aiStatus={ai.aiStatus}
-              aiError={ai.aiError}
-              aiLoading={ai.aiLoading}
-              explanation={ai.explanation}
-              imageBase64={ai.imageBase64}
-              onSelectImage={ai.selectImage}
-              onClearImage={ai.clearImage}
-              showKeyWarning={ai.showKeyWarning}
-              history={ai.history}
-              historyModalOpen={ai.historyModalOpen}
-              onOpenHistory={() => ai.setHistoryModalOpen(true)}
-              onCloseHistory={() => ai.setHistoryModalOpen(false)}
-              onAskAI={ai.askAI}
-              onRestoreFromHistory={ai.restoreFromHistory}
-              timeAgo={ai.timeAgo}
-            />
-          </div>
-
-          {/* Col 3: Config panels */}
-          <div className="flex flex-col gap-5">
-            <RiskWeightsPanel config={config} onUpdate={update} />
-            <VisualSettings   config={config} onUpdate={update} />
-            <AdvancedSettings config={config} onUpdate={update} />
-          </div>
+          <QuickPresets
+            activePreset={activePreset}
+            appliedLabel={appliedLabel}
+            onApplyPreset={applyPreset}
+          />
+          <AIAssistant
+            aiStatus={ai.aiStatus}
+            aiError={ai.aiError}
+            aiLoading={ai.aiLoading}
+            explanation={ai.explanation}
+            imageBase64={ai.imageBase64}
+            onSelectImage={ai.selectImage}
+            onClearImage={ai.clearImage}
+            showKeyWarning={ai.showKeyWarning}
+            history={ai.history}
+            historyModalOpen={ai.historyModalOpen}
+            onOpenHistory={() => ai.setHistoryModalOpen(true)}
+            onCloseHistory={() => ai.setHistoryModalOpen(false)}
+            onAskAI={ai.askAI}
+            onRestoreFromHistory={ai.restoreFromHistory}
+            timeAgo={ai.timeAgo}
+          />
+          <RiskWeightsPanel config={config} onUpdate={update} />
+          <VisualSettings   config={config} onUpdate={update} />
+          <AdvancedSettings config={config} onUpdate={update} />
         </div>
 
         {/* Footer */}
-        <div className="mt-10 text-center text-[0.70rem] text-[var(--color-text-muted)] leading-relaxed">
-          Capstone Project · 2026 &nbsp;·&nbsp;
-          <span className="text-[var(--color-text-dim)] font-medium">YOLOv11n</span> +&nbsp;
-          <span className="text-[var(--color-text-dim)] font-medium">Farneback Optical Flow</span> +&nbsp;
-          <span className="text-[var(--color-text-dim)] font-medium">FastAPI</span>
-        </div>
-      </div>
+        <p style={{ textAlign: 'center', marginTop: 40, fontSize: '0.68rem',
+          color: 'var(--color-text-muted)' }}>
+          Built with&nbsp;
+          <span style={{ color: 'var(--color-text-dim)' }}>YOLOv11n</span> ·{' '}
+          <span style={{ color: 'var(--color-text-dim)' }}>Farneback Optical Flow</span> ·{' '}
+          <span style={{ color: 'var(--color-text-dim)' }}>FastAPI</span> ·{' '}
+          <span style={{ color: 'var(--color-text-dim)' }}>React + Tailwind</span>
+        </p>
+      </main>
     </div>
   )
 }

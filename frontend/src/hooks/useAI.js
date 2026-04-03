@@ -1,18 +1,21 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
-const HISTORY_KEY = 'crm-prompt-history'
-const HISTORY_MAX = 15
+const TOKEN_KEY = 'crm-auth-token'
+const USER_KEY  = 'crm-auth-user'
 
-function timeAgo(ts) {
-  const diff = Math.floor((Date.now() - ts) / 1000)
+function getAuth() {
+  const token = localStorage.getItem(TOKEN_KEY)
+  let user = null
+  try { user = JSON.parse(localStorage.getItem(USER_KEY)) } catch (_) {}
+  return { token, user }
+}
+
+function timeAgo(isoString) {
+  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000)
   if (diff < 60)    return 'just now'
   if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
-}
-
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [] } catch (_) { return [] }
 }
 
 function compressImage(dataUrl, maxW = 240, maxH = 160, quality = 0.65) {
@@ -21,7 +24,7 @@ function compressImage(dataUrl, maxW = 240, maxH = 160, quality = 0.65) {
     img.onload = () => {
       const scale = Math.min(maxW / img.width, maxH / img.height, 1)
       const canvas = document.createElement('canvas')
-      canvas.width = Math.round(img.width * scale)
+      canvas.width  = Math.round(img.width  * scale)
       canvas.height = Math.round(img.height * scale)
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
       resolve(canvas.toDataURL('image/jpeg', quality))
@@ -31,15 +34,34 @@ function compressImage(dataUrl, maxW = 240, maxH = 160, quality = 0.65) {
   })
 }
 
+async function fetchHistory(token) {
+  if (!token) return []
+  try {
+    const res = await fetch('/api/ai-history', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return []
+    return await res.json()
+  } catch {
+    return []
+  }
+}
+
 export function useAI(config, setConfig) {
-  const [aiStatus, setAiStatus]     = useState('')
-  const [aiError, setAiError]       = useState(false)
-  const [aiLoading, setAiLoading]   = useState(false)
-  const [explanation, setExplanation] = useState(null)  // { text, chips }
-  const [imageBase64, setImageBase64] = useState('')
+  const [aiStatus,      setAiStatus]      = useState('')
+  const [aiError,       setAiError]       = useState(false)
+  const [aiLoading,     setAiLoading]     = useState(false)
+  const [explanation,   setExplanation]   = useState(null)
+  const [imageBase64,   setImageBase64]   = useState('')
   const [showKeyWarning, setShowKeyWarning] = useState(false)
   const [historyModalOpen, setHistoryModalOpen] = useState(false)
-  const [history, setHistory]       = useState(loadHistory)
+  const [history,       setHistory]       = useState([])
+
+  // Load history from API on mount
+  useEffect(() => {
+    const { token } = getAuth()
+    fetchHistory(token).then(setHistory)
+  }, [])
 
   const selectImage = useCallback((file) => {
     if (!file) return
@@ -61,11 +83,24 @@ export function useAI(config, setConfig) {
     setExplanation(null)
     setAiStatus('🤖 Analysing your scenario…')
 
+    const { token, user } = getAuth()
+
     try {
+      // Compress thumbnail before sending (saves DB space)
+      const thumbnail = imageBase64 ? await compressImage(imageBase64) : null
+
       const res = await fetch('/api/ai-configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, ...(imageBase64 ? { image_base64: imageBase64 } : {}) }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          prompt,
+          ...(imageBase64  ? { image_base64:      imageBase64 } : {}),
+          ...(thumbnail    ? { image_thumbnail_b64: thumbnail } : {}),
+          ...(user         ? { user_id: user.user_id }          : {}),
+        }),
       })
       const data = await res.json()
 
@@ -76,10 +111,10 @@ export function useAI(config, setConfig) {
         return
       }
 
-      const biasInt  = Math.round(data.density_bias * 100)
+      const biasInt  = Math.round(data.density_bias   * 100)
       const highInt  = Math.round(data.high_score_thr * 100)
       const critInt  = Math.round(data.crit_score_thr * 100)
-      const alphaInt = Math.round(data.overlay_alpha * 100)
+      const alphaInt = Math.round(data.overlay_alpha  * 100)
 
       setConfig(prev => ({
         ...prev,
@@ -102,19 +137,8 @@ export function useAI(config, setConfig) {
       setAiError(false)
       setAiStatus('✅ All sliders updated by AI — ready to analyse.')
 
-      // Save to history
-      const currentSettings = {
-        bias: biasInt, pressure: data.pressure_enabled, calib: false,
-        grid: data.grid_size, thresh: data.thresh_critical,
-        highThr: highInt, critThr: critInt, alpha: alphaInt, hyst: data.hysteresis,
-      }
-      const imgToStore = imageBase64 ? await compressImage(imageBase64) : null
-      setHistory(prev => {
-        const updated = [{ prompt, settings: currentSettings, ts: Date.now(), image: imgToStore }, ...prev]
-          .slice(0, HISTORY_MAX)
-        try { localStorage.setItem(HISTORY_KEY, JSON.stringify(updated)) } catch (_) {}
-        return updated
-      })
+      // Refresh history from API so the new entry appears
+      fetchHistory(token).then(setHistory)
 
     } catch (err) {
       setAiError(true)
@@ -127,7 +151,21 @@ export function useAI(config, setConfig) {
   const restoreFromHistory = useCallback((index) => {
     const entry = history[index]
     if (!entry) return
-    setConfig(prev => ({ ...prev, ...entry.settings }))
+    // Map DB shape back to config sliders
+    const snap = entry.config_snapshot
+    if (snap) {
+      setConfig(prev => ({
+        ...prev,
+        bias:     Math.round((snap.density_bias   ?? prev.bias / 100) * 100),
+        pressure: snap.pressure_enabled ?? prev.pressure,
+        grid:     snap.grid_size        ?? prev.grid,
+        thresh:   snap.thresh_critical  ?? prev.thresh,
+        highThr:  Math.round((snap.high_score_thr ?? prev.highThr / 100) * 100),
+        critThr:  Math.round((snap.crit_score_thr ?? prev.critThr / 100) * 100),
+        alpha:    Math.round((snap.overlay_alpha  ?? prev.alpha  / 100) * 100),
+        hyst:     snap.hysteresis       ?? prev.hyst,
+      }))
+    }
     setHistoryModalOpen(false)
     setAiStatus('✅ Settings restored from history.')
     setTimeout(() => setAiStatus(''), 2500)

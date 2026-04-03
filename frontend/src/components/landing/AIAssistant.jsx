@@ -15,7 +15,7 @@ export default function AIAssistant({
   }
 
   return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] p-5">
+    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]" style={{ padding: '32px' }}>
       <div className="text-[0.78rem] font-bold text-[var(--color-text-dim)] uppercase tracking-[0.08em] mb-3">
         🤖 AI Configuration Assistant
         <span className="text-[0.60rem] font-normal text-[var(--color-text-muted)] ml-1.5 normal-case tracking-normal">

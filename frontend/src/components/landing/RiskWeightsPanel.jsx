@@ -4,7 +4,7 @@ export default function RiskWeightsPanel({ config, onUpdate }) {
   const { bias, calib, pressure } = config
 
   return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)] p-5">
+    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]" style={{ padding: '32px' }}>
       <div className="text-[0.78rem] font-bold text-[var(--color-text-dim)] uppercase tracking-[0.08em] mb-4">
         ⚖️ Risk Formula Weights
       </div>

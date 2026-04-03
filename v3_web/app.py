@@ -15,18 +15,30 @@ import os
 import math
 import time
 import threading
+import uuid
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, UploadFile, File, Form, Request, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import json
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env file automatically
+
+# MongoDB (Motor async driver)
+# Support both `python v3_web/app.py` (from project root) and direct execution
+_V3_DIR = os.path.dirname(os.path.abspath(__file__))
+if _V3_DIR not in sys.path:
+    sys.path.insert(0, _V3_DIR)
+from db import get_db, create_indexes, close_client
+from auth import hash_password, verify_password, create_access_token, get_current_user
 
 # Optional: new Gemini AI SDK (google-genai)
 try:
@@ -101,10 +113,14 @@ _latest_stats      = {
 }
 
 # Session metrics — tracked for the session summary shown on cancel
-_session_peak_risk   = 0.0
-_session_peak_status = "Normal"
-_session_start_time  = 0.0
-_session_frames      = 0
+_session_peak_risk       = 0.0
+_session_peak_status     = "Normal"
+_session_start_time      = 0.0
+_session_frames          = 0
+_current_session_id      = None   # MongoDB session_id for the active run
+_session_total_density   = 0.0    # Running sum for avg_density at completion
+_session_total_pressure  = 0.0    # Running sum for avg_pressure at completion
+_session_critical_events = 0      # Count of CRITICAL crossings this session
 
 # ── Auto-Calibration state ────────────────────────────────────────────────────
 _calib_mode_enabled  = False      # Toggled by the UI switch
@@ -272,10 +288,13 @@ def processing_thread():
         cell_area = grid_presets.get(cfg["grid_size"], 14400)
 
         # Reset session metrics
-        _session_peak_risk   = 0.0
-        _session_peak_status = "Normal"
-        _session_start_time  = time.time()
-        _session_frames      = 0
+        _session_peak_risk       = 0.0
+        _session_peak_status     = "Normal"
+        _session_start_time      = time.time()
+        _session_frames          = 0
+        _session_total_density   = 0.0
+        _session_total_pressure  = 0.0
+        _session_critical_events = 0
 
         # Reset calibration state for this session
         if _calib_mode_enabled:
@@ -428,10 +447,41 @@ def processing_thread():
                     processed_count += 1
                     _session_frames = processed_count
 
+                    # Running sums for end-of-session averages
+                    _session_total_density  += float(np.mean(last_raw_density / max(int(cfg["thresh_critical"]), 1)))
+                    _session_total_pressure += last_avg_pressure
+
                     # Track session peak
                     if last_global_score > _session_peak_risk:
                         _session_peak_risk   = last_global_score
                         _session_peak_status = last_scene_status
+
+                    # Persist CRITICAL events to MongoDB (async fire-and-forget via thread)
+                    if crit_c > 0 and _current_session_id:
+                        _session_critical_events += 1
+                        hotspot = [
+                            [int(r), int(c)]
+                            for r in range(GRID_ROWS)
+                            for c in range(GRID_COLS)
+                            if last_risk_labels[r, c] == RISK_CRITICAL
+                        ]
+                        event_doc = {
+                            "session_id":    _current_session_id,
+                            "timestamp_sec": round(frame_count / max(video_fps, 1), 2),
+                            "frame_number":  frame_count,
+                            "level":         "critical",
+                            "global_score":  round(last_global_score, 1),
+                            "avg_pressure":  round(last_avg_pressure, 3),
+                            "hotspot_cells": hotspot,
+                            "person_count":  last_count,
+                        }
+                        import asyncio, concurrent.futures
+                        def _insert_event(doc):
+                            import asyncio as _aio
+                            loop = _aio.new_event_loop()
+                            loop.run_until_complete(get_db()["risk_events"].insert_one(doc))
+                            loop.close()
+                        threading.Thread(target=_insert_event, args=(event_doc,), daemon=True).start()
 
                     if processed_count % 30 == 0:
                         history.print_stability_report(frame_count)
@@ -499,6 +549,39 @@ def processing_thread():
 
         cap.release()
 
+        # ── Write session completion to MongoDB ───────────────────────────────
+        if _current_session_id:
+            elapsed  = time.time() - _session_start_time
+            n_frames = max(processed_count, 1)
+            summary  = {
+                "duration_seconds":  round(elapsed, 1),
+                "peak_risk_score":   round(_session_peak_risk, 1),
+                "peak_status":       _session_peak_status,
+                "total_frames":      processed_count,
+                "critical_events":   _session_critical_events,
+                "avg_density":       round(_session_total_density  / n_frames, 3),
+                "avg_pressure":      round(_session_total_pressure / n_frames, 3),
+            }
+            def _finalize_session(sid, summ, cancelled):
+                import asyncio as _aio
+                loop = _aio.new_event_loop()
+                loop.run_until_complete(
+                    get_db()["sessions"].update_one(
+                        {"session_id": sid},
+                        {"$set": {
+                            "status":  "cancelled" if cancelled else "completed",
+                            "summary": summ,
+                        }}
+                    )
+                )
+                loop.close()
+            cancelled = _cancel_event.is_set()
+            threading.Thread(
+                target=_finalize_session,
+                args=(_current_session_id, summary, cancelled),
+                daemon=True
+            ).start()
+
         # Mark as inactive after cancel or new video swap
         with _lock:
             _processing_active = False
@@ -512,9 +595,32 @@ def processing_thread():
 
 
 # =============================================================================
-# FastAPI
+# FastAPI  (lifespan handles DB connect/disconnect)
 # =============================================================================
-app = FastAPI(title="Crowd Risk Monitor")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: ensure MongoDB connection and indexes
+    try:
+        await create_indexes()
+        print("[db] Connected to MongoDB Atlas.")
+    except Exception as e:
+        print(f"[db] WARNING: MongoDB connection failed — {e}")
+        print("[db] App will run without DB persistence.")
+    yield
+    # Shutdown: close Motor client cleanly
+    await close_client()
+
+
+app = FastAPI(title="Crowd Risk Monitor", lifespan=lifespan)
+
+# Allow the React dev server (port 5173) and any deployed origin to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -570,8 +676,10 @@ async def upload_video(
     high_score_thr:    float = Form(0.50),
     crit_score_thr:    float = Form(0.75),
     hysteresis:        int   = Form(8),
+    # Auth — JWT required
+    current_user: dict = Depends(get_current_user),
 ):
-    global _next_video_path, _session_config, _calib_mode_enabled
+    global _next_video_path, _session_config, _calib_mode_enabled, _current_session_id
 
     # Save the file
     save_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -582,25 +690,48 @@ async def upload_video(
                 break
             f.write(chunk)
 
-    # Store session config BEFORE signalling the processing thread
+    # Build config dict
+    config_dict = {
+        "density_bias":      max(0.0, min(1.0, density_bias)),
+        "pressure_enabled":  pressure_enabled.lower() not in ("false", "0", "no"),
+        "auto_calib":        auto_calib.lower() not in ("false", "0", "no"),
+        "overlay_alpha":     max(0.0, min(1.0, overlay_alpha)),
+        "grid_size":         grid_size if grid_size in ("coarse", "standard", "detailed") else "standard",
+        "thresh_critical":   max(1, thresh_critical),
+        "pressure_weight":   0.25,
+        "high_score_thr":    max(0.0, min(1.0, high_score_thr)),
+        "crit_score_thr":    max(0.0, min(1.0, crit_score_thr)),
+        "hysteresis":        max(0, hysteresis),
+    }
+
+    # Generate a unique session ID for this run
+    session_id = str(uuid.uuid4())
+
+    # Persist session doc to MongoDB (includes user_id for private history)
+    try:
+        await get_db()["sessions"].insert_one({
+            "session_id":        session_id,
+            "user_id":           current_user["user_id"],
+            "user_email":        current_user["email"],
+            "filename":          file.filename,
+            "uploaded_at":       datetime.now(timezone.utc),
+            "status":            "processing",
+            "config":            config_dict,
+            "summary":           None,
+            "output_video_path": None,
+        })
+    except Exception as e:
+        print(f"[db] Could not insert session doc: {e}")
+
+    # Store session config and ID BEFORE signalling the processing thread
     with _lock:
-        _session_config = {
-            "density_bias":      max(0.0, min(1.0, density_bias)),
-            "pressure_enabled":  pressure_enabled.lower() not in ("false", "0", "no"),
-            "auto_calib":        auto_calib.lower() not in ("false", "0", "no"),
-            "overlay_alpha":     max(0.0, min(1.0, overlay_alpha)),
-            "grid_size":         grid_size if grid_size in ("coarse", "standard", "detailed") else "standard",
-            "thresh_critical":   max(1, thresh_critical),
-            "pressure_weight":   0.25,   # fixed 25% slice when pressure is enabled
-            "high_score_thr":    max(0.0, min(1.0, high_score_thr)),
-            "crit_score_thr":    max(0.0, min(1.0, crit_score_thr)),
-            "hysteresis":        max(0, hysteresis),
-        }
-        _next_video_path = save_path
+        _session_config     = config_dict
+        _next_video_path    = save_path
+        _current_session_id = session_id
 
     _new_video_event.set()
-    print(f"[v3] Uploaded: {file.filename} | config: {_session_config}")
-    return JSONResponse({"status": "ok", "filename": file.filename})
+    print(f"[v3] Uploaded: {file.filename} | session: {session_id} | user: {current_user['email']}")
+    return JSONResponse({"status": "ok", "filename": file.filename, "session_id": session_id})
 
 
 @app.post("/cancel")
@@ -812,12 +943,208 @@ async def ai_configure(request: Request):
             config["grid_size"] = "standard"
 
         print(f"[AI] Configured for: {user_prompt[:60]}... → {config}")
+
+        # Save prompt + config snapshot to ai_prompt_history (tied to user if authenticated)
+        thumbnail_b64 = body.get("image_thumbnail_b64", None)
+        user_id_for_history = body.get("user_id", None)  # frontend sends this from JWT payload
+        try:
+            await get_db()["ai_prompt_history"].insert_one({
+                "user_id":             user_id_for_history,
+                "prompt":              user_prompt,
+                "created_at":          datetime.now(timezone.utc),
+                "config_snapshot":     config,
+                "image_thumbnail_b64": thumbnail_b64,
+            })
+        except Exception as db_err:
+            print(f"[db] Could not save AI history: {db_err}")
+
         return JSONResponse(config)
 
     except json.JSONDecodeError as e:
         return JSONResponse({"error": f"LLM returned invalid JSON: {e}"}, status_code=500)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================================
+# Session CRUD Routes
+# =============================================================================
+
+@app.get("/api/sessions")
+async def list_sessions(current_user: dict = Depends(get_current_user)):
+    """Return all sessions for the logged-in user, newest first."""
+    try:
+        cursor = get_db()["sessions"].find(
+            {"user_id": current_user["user_id"]}, {"_id": 0}
+        ).sort("uploaded_at", -1).limit(100)
+        sessions = await cursor.to_list(length=100)
+        for s in sessions:
+            if isinstance(s.get("uploaded_at"), datetime):
+                s["uploaded_at"] = s["uploaded_at"].isoformat()
+        return JSONResponse(sessions)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Return a single session document (owner only)."""
+    try:
+        doc = await get_db()["sessions"].find_one(
+            {"session_id": session_id, "user_id": current_user["user_id"]}, {"_id": 0}
+        )
+        if not doc:
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+        if isinstance(doc.get("uploaded_at"), datetime):
+            doc["uploaded_at"] = doc["uploaded_at"].isoformat()
+        return JSONResponse(doc)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/sessions/{session_id}/events")
+async def get_session_events(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Return all risk events for a session (owner only)."""
+    try:
+        # Verify ownership first
+        owner = await get_db()["sessions"].find_one(
+            {"session_id": session_id, "user_id": current_user["user_id"]}, {"_id": 1}
+        )
+        if not owner:
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+        cursor = get_db()["risk_events"].find(
+            {"session_id": session_id}, {"_id": 0}
+        ).sort("timestamp_sec", 1)
+        events = await cursor.to_list(length=10000)
+        return JSONResponse(events)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a session and all its risk events (owner only)."""
+    try:
+        db = get_db()
+        result = await db["sessions"].delete_one(
+            {"session_id": session_id, "user_id": current_user["user_id"]}
+        )
+        if result.deleted_count == 0:
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+        ev = await db["risk_events"].delete_many({"session_id": session_id})
+        return JSONResponse({"deleted_events": ev.deleted_count})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================================
+# AI Prompt History Routes
+# =============================================================================
+
+@app.get("/api/ai-history")
+async def get_ai_history(current_user: dict = Depends(get_current_user)):
+    """Return last 15 AI prompt history entries for the logged-in user."""
+    try:
+        cursor = get_db()["ai_prompt_history"].find(
+            {"user_id": current_user["user_id"]}, {"_id": 0}
+        ).sort("created_at", -1).limit(15)
+        entries = await cursor.to_list(length=15)
+        for e in entries:
+            if isinstance(e.get("created_at"), datetime):
+                e["created_at"] = e["created_at"].isoformat()
+        return JSONResponse(entries)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.delete("/api/ai-history/{entry_id}")
+async def delete_ai_history_entry(entry_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete one AI history entry (owner only)."""
+    try:
+        from bson import ObjectId
+        result = await get_db()["ai_prompt_history"].delete_one(
+            {"_id": ObjectId(entry_id), "user_id": current_user["user_id"]}
+        )
+        return JSONResponse({"deleted": result.deleted_count})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================================
+# Auth Routes — Register & Login
+# =============================================================================
+
+@app.post("/api/auth/register")
+async def register(request: Request):
+    """
+    Register a new user.
+    Body: { "email": "...", "password": "..." }
+    Returns: { "message": "Account created." }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    email    = body.get("email", "").strip().lower()
+    password = body.get("password", "").strip()
+
+    if not email or not password:
+        return JSONResponse({"error": "Email and password are required."}, status_code=400)
+    if len(password) < 6:
+        return JSONResponse({"error": "Password must be at least 6 characters."}, status_code=400)
+
+    db = get_db()
+    existing = await db["users"].find_one({"email": email})
+    if existing:
+        return JSONResponse({"error": "An account with this email already exists."}, status_code=409)
+
+    hashed = hash_password(password)
+    result = await db["users"].insert_one({
+        "email":         email,
+        "password_hash": hashed,
+        "created_at":    datetime.now(timezone.utc),
+    })
+
+    # Return a token immediately so the user is logged in right after signup
+    token = create_access_token({"sub": email, "user_id": str(result.inserted_id)})
+    print(f"[auth] New user registered: {email}")
+    return JSONResponse({"message": "Account created.", "access_token": token, "token_type": "bearer", "email": email})
+
+
+@app.post("/api/auth/login")
+async def login(request: Request):
+    """
+    Authenticate a user.
+    Body: { "email": "...", "password": "..." }
+    Returns: { "access_token": "...", "token_type": "bearer", "email": "..." }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    email    = body.get("email", "").strip().lower()
+    password = body.get("password", "").strip()
+
+    if not email or not password:
+        return JSONResponse({"error": "Email and password are required."}, status_code=400)
+
+    db   = get_db()
+    user = await db["users"].find_one({"email": email})
+
+    if not user or not verify_password(password, user["password_hash"]):
+        return JSONResponse({"error": "Invalid email or password."}, status_code=401)
+
+    token = create_access_token({"sub": email, "user_id": str(user["_id"])})
+    print(f"[auth] Login: {email}")
+    return JSONResponse({"access_token": token, "token_type": "bearer", "email": email})
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Return the currently logged-in user's info. Useful for the frontend to hydrate state on refresh."""
+    return JSONResponse({"email": current_user["email"], "user_id": current_user["user_id"]})
 
 
 if __name__ == "__main__":

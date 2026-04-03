@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+const TOKEN_KEY = 'crm-auth-token'
+
 export function useVideoUpload(config) {
   const navigate = useNavigate()
   const [selectedFile, setSelectedFile] = useState(null)
@@ -18,7 +20,8 @@ export function useVideoUpload(config) {
     setUploadLabel(`Uploading "${selectedFile.name}"…`)
 
     try {
-      const form = new FormData()
+      const token = localStorage.getItem(TOKEN_KEY)
+      const form  = new FormData()
       form.append('file', selectedFile)
 
       // Core weights
@@ -36,12 +39,21 @@ export function useVideoUpload(config) {
       form.append('crit_score_thr',  (config.critThr / 100).toFixed(2))
       form.append('hysteresis',      config.hyst)
 
-      const res = await fetch('/upload', { method: 'POST', body: form })
-      if (!res.ok) throw new Error('Upload failed')
+      const res = await fetch('/upload', {
+        method:  'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body:    form,
+      })
+
+      if (res.status === 401) throw new Error('Session expired. Please log in again.')
+      if (!res.ok)            throw new Error('Upload failed')
+
+      const data = await res.json()
+      const sessionId = data.session_id
 
       setUploadLabel('Starting analysis engine…')
 
-      // Save config to localStorage for restoration on "Go Home"
+      // Keep localStorage config for slider restoration on "Go Home"
       localStorage.setItem('crm-last-session-config', JSON.stringify({
         density_bias:     config.bias / 100,
         pressure_enabled: config.pressure,
@@ -55,7 +67,8 @@ export function useVideoUpload(config) {
       }))
 
       await new Promise(r => setTimeout(r, 1500))
-      navigate('/dashboard')
+      // Navigate to the session-specific dashboard URL
+      navigate(sessionId ? `/dashboard/${sessionId}` : '/dashboard')
 
     } catch (err) {
       setUploadLabel('❌ ' + err.message)

@@ -28,6 +28,22 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+/* ── Light Mode Overrides ── */
+.light {
+  --color-bg:         #f8fafc;
+  --color-surface:    #ffffff;
+  --color-surface2:   #f1f5f9;
+  --color-border:     #e2e8f0;
+  --color-text:       #0f172a;
+  --color-text-dim:   #475569;
+  --color-text-muted: #64748b;
+  
+  --color-green-glow:  rgba(34, 197, 94, 0.12);
+  --color-orange-glow: rgba(249, 115, 22, 0.12);
+  --color-red-glow:    rgba(239, 68, 68, 0.15);
+  --color-blue-glow:   rgba(99, 102, 241, 0.15);
+}
+
 /* ── Base resets ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
