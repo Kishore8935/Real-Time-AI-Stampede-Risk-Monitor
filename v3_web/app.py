@@ -22,11 +22,16 @@ from ultralytics import YOLO
 
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import json
 from dotenv import load_dotenv
 
 load_dotenv()  # Load .env file automatically
+
+# ── Alert system ─────────────────────────────────────────────────────────────
+from alerter import AlertManager
+alerter = AlertManager()
 
 # Optional: new Gemini AI SDK (google-genai)
 try:
@@ -37,13 +42,16 @@ except ImportError:
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-V2_DIR     = os.path.join(BASE_DIR, "..", "v2")
-PARENT_DIR = os.path.join(BASE_DIR, "..")
+V2_DIR     = os.path.abspath(os.path.join(BASE_DIR, "..", "v2"))
+PARENT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-sys.path.insert(0, PARENT_DIR)
-sys.path.insert(0, V2_DIR)
+# Insert V2_DIR first so 'density' and 'motion' packages resolve to v2/
+if V2_DIR not in sys.path:
+    sys.path.insert(0, V2_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(1, PARENT_DIR)
 
 from density.estimator      import DensityEstimator
 from density.smoother       import TemporalSmoother
@@ -354,7 +362,14 @@ def processing_thread():
 
         # ── Inner loop ────────────────────────────────────────────────────────
         while not _new_video_event.is_set() and not _cancel_event.is_set():
-            ret, frame = cap.read()
+            try:
+                ret, frame = cap.read()
+            except cv2.error as _oom:
+                # OOM on frame read — release memory pressure and skip frame
+                print(f"[v3] cap.read() OOM — skipping frame, sleeping 0.5s: {_oom}")
+                import gc; gc.collect()
+                time.sleep(0.5)
+                continue
             if not ret:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
@@ -425,6 +440,9 @@ def processing_thread():
                     last_scene_status = risk_fusion.get_scene_status(last_risk_labels)
                     last_fps = 1.0 / max(time.time() - t0, 1e-6)
 
+                    # ── Alert dispatch (OUTSIDE _lock — network I/O in daemon thread) ──
+                    alerter.try_alert(last_global_score, last_scene_status, last_count)
+
                     processed_count += 1
                     _session_frames = processed_count
 
@@ -463,6 +481,9 @@ def processing_thread():
                 high_c = int(np.sum(last_risk_labels == RISK_HIGH))
                 crit_c = int(np.sum(last_risk_labels == RISK_CRITICAL))
 
+                # Snapshot alert state before acquiring video lock
+                alert_status = alerter.get_status()
+
                 with _lock:
                     _latest_frame_jpg = buf.tobytes()
                     _latest_stats = {
@@ -490,6 +511,8 @@ def processing_thread():
                         "motion_weight":           round(_active_motion_w  * 100),
                         "calib_sample_target":     calib_sample_target,
                         "calib_samples_collected": len(calib_density_samples),
+                        # Alert system state (piggybacked — no extra polling needed)
+                        "alert_status":            alert_status,
                     }
 
             except cv2.error as e:
@@ -515,6 +538,7 @@ def processing_thread():
 # FastAPI
 # =============================================================================
 app = FastAPI(title="Crowd Risk Monitor")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 
 @app.get("/")
@@ -818,6 +842,39 @@ async def ai_configure(request: Request):
         return JSONResponse({"error": f"LLM returned invalid JSON: {e}"}, status_code=500)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# =============================================================================
+# Alert System API Routes
+# =============================================================================
+
+
+
+
+@app.post("/api/alert-test")
+def alert_test():
+    """
+    Bypass cooldown timers and fire a test alert immediately.
+    Useful for verifying SMS + Push setup without waiting for a real critical event.
+    """
+    alerter.force_test_alert()
+    return JSONResponse({"status": "ok", "message": "Test alert fired — check your phone and browser."})
+
+
+@app.post("/api/sms-alerts/on")
+def sms_alerts_on():
+    """Enable SMS alert dispatch from the dashboard toggle."""
+    alerter.set_sms_enabled(True)
+    return JSONResponse({"status": "ok", "sms_enabled": True})
+
+
+@app.post("/api/sms-alerts/off")
+def sms_alerts_off():
+    """Disable SMS alert dispatch from the dashboard toggle."""
+    alerter.set_sms_enabled(False)
+    return JSONResponse({"status": "ok", "sms_enabled": False})
+
+
 
 
 if __name__ == "__main__":

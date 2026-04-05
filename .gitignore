@@ -8,3 +8,4 @@ __pycache__/
 v3_web/uploads/
 v3_web/uploads/*
 .gemini/
+.env

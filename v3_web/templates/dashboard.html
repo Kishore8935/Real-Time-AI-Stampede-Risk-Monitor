@@ -847,6 +847,129 @@
         body.light .theme-btn:hover {
             background: rgba(0, 0, 0, 0.05);
         }
+        /* ── Alert Panel Card ──────────────────────────────────────── */
+        .alert-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .alert-arm-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .alert-channel-chip {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 10px;
+            border-radius: 8px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-dim);
+            transition: all 0.3s;
+        }
+
+        .alert-channel-chip.armed {
+            border-color: rgba(34,197,94,0.5);
+            background: rgba(34,197,94,0.1);
+            color: #22c55e;
+        }
+
+        .alert-channel-chip .chip-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            flex-shrink: 0;
+        }
+
+        .alert-level-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin-bottom: 8px;
+            background: rgba(100,116,139,0.15);
+            color: var(--text-dim);
+            transition: all 0.3s;
+        }
+
+        .alert-level-badge.high {
+            background: rgba(249,115,22,0.15);
+            color: #f97316;
+        }
+
+        .alert-level-badge.critical {
+            background: rgba(239,68,68,0.18);
+            color: #ef4444;
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+
+        .alert-cooldown {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .alert-btn-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .push-enable-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 10px;
+            background: rgba(99,102,241,0.12);
+            border: 1px solid rgba(99,102,241,0.35);
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #818cf8;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .push-enable-btn:hover { background: rgba(99,102,241,0.22); }
+        .push-enable-btn:disabled { opacity: 0.5; cursor: default; }
+        .push-enable-btn.granted {
+            border-color: rgba(34,197,94,0.4);
+            background: rgba(34,197,94,0.10);
+            color: #22c55e;
+        }
+
+        .test-alert-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: rgba(239,68,68,0.10);
+            border: 1px solid rgba(239,68,68,0.30);
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #ef4444;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .test-alert-btn:hover { background: rgba(239,68,68,0.20); }
     </style>
 </head>
 
@@ -1040,6 +1163,50 @@
                     </div>
                 </div>
 
+                <!-- 🔔 Alert Notifications Card -->
+                <div class="card">
+                    <div class="alert-panel-header">
+                    <div class="card-title" style="margin:0">🔔 Alert Notifications</div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <span style="font-size:0.63rem;color:var(--text-dim);font-weight:600">📱 SMS</span>
+                        <label class="toggle-switch" title="Toggle SMS Alerts">
+                            <input type="checkbox" id="sms-alerts-toggle" onchange="toggleSmsAlerts(this)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                    <!-- Channel arm status -->
+                    <div class="alert-arm-row">
+                        <div class="alert-channel-chip" id="sms-chip">
+                            <div class="chip-dot"></div>
+                            <span>SMS</span>
+                        </div>
+                        <div class="alert-channel-chip" id="push-chip">
+                            <div class="chip-dot"></div>
+                            <span>Notif</span>
+                        </div>
+                    </div>
+
+                    <!-- Current alert level -->
+                    <div class="alert-level-badge" id="alert-level-badge">✅ Monitoring</div>
+
+                    <!-- Cooldown countdown -->
+                    <div class="alert-cooldown" id="alert-cooldown" style="display:none">
+                        🔕 Next alert in: <span id="cooldown-timer">—</span>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="alert-btn-row">
+                        <button class="push-enable-btn" id="push-enable-btn" onclick="enableBrowserAlerts()">
+                            🔔 Enable Alerts
+                        </button>
+                        <button class="test-alert-btn" id="test-alert-btn" onclick="fireTestAlert()" title="Send a test SMS + Push notification">
+                            🚨 Test
+                        </button>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -1102,374 +1269,7 @@
         </div>
     </div>
 
-    <script>
-        // ── Chart.js setup ─────────────────────────────────────────────
-        const MAX_POINTS = 120;          // ~60 seconds at 500ms polling
-        const chartLabels = [];
-        const chartData = [];
-
-        const ctx = document.getElementById('riskChart').getContext('2d');
-        const riskChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: chartLabels,
-                datasets: [{
-                    data: chartData,
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.35,
-                    fill: true,
-                    segment: {
-                        borderColor: seg => {
-                            const v = seg.p1.raw;
-                            return v >= 65 ? '#ef4444' : v >= 35 ? '#f97316' : '#22c55e';
-                        },
-                        backgroundColor: seg => {
-                            const v = seg.p1.raw;
-                            return v >= 65 ? 'rgba(239,68,68,0.12)' :
-                                v >= 35 ? 'rgba(249,115,22,0.10)' :
-                                    'rgba(34,197,94,0.08)';
-                        },
-                    },
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: { duration: 300 },
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { display: false },
-                    y: {
-                        min: 0, max: 100,
-                        grid: { color: 'rgba(255,255,255,0.04)' },
-                        ticks: {
-                            color: '#4a5568', font: { size: 9, family: 'JetBrains Mono' },
-                            stepSize: 25,
-                        },
-                    },
-                },
-            },
-        });
-
-        // ── DOM refs ───────────────────────────────────────────────────
-        const statusCard = document.getElementById('status-card');
-        const statusIcon = document.getElementById('status-icon');
-        const statusText = document.getElementById('status-text');
-        const riskNumber = document.getElementById('risk-number');
-        const gaugeFill = document.getElementById('gauge-fill');
-        const fpsBadge = document.getElementById('fps-badge');
-        const brandVid = document.getElementById('brand-vid');
-        const els = {
-            persons: document.getElementById('stat-persons'),
-            fps: document.getElementById('stat-fps'),
-            rows: document.getElementById('stat-rows'),
-            cols: document.getElementById('stat-cols'),
-            safe: document.getElementById('cell-safe'),
-            high: document.getElementById('cell-high'),
-            crit: document.getElementById('cell-crit'),
-        };
-
-        function getTier(s) { const u = s.toUpperCase(); return u.includes('CRITICAL') ? 'critical' : u.includes('HIGH') || u.includes('WARNING') || u.includes('ELEVATED') ? 'elevated' : 'normal'; }
-        function riskTier(n) { return n >= 65 ? 'high' : n >= 35 ? 'mid' : 'low'; }
-        const icons = { normal: '🟢', elevated: '🟠', critical: '🔴' };
-
-        // ── Optical Flow Overlay Toggle ──────────────────────────────────
-        let _flowOverlayOn = false;
-        async function toggleFlowOverlay() {
-            _flowOverlayOn = !_flowOverlayOn;
-            const endpoint = _flowOverlayOn ? '/api/flow-overlay/on' : '/api/flow-overlay/off';
-            await fetch(endpoint, { method: 'POST' });
-            const btn = document.getElementById('flow-toggle-btn');
-            btn.classList.toggle('active', _flowOverlayOn);
-            btn.textContent = _flowOverlayOn ? '🌊 Flow ON' : '🌊 Flow Vectors';
-        }
-
-        // ── Go Home: save session config for landing page to restore ────
-        async function goHome() {
-            try {
-                const cfg = await fetch('/api/session-config').then(r => r.json());
-                localStorage.setItem('crm-last-session-config', JSON.stringify(cfg));
-            } catch(e) { /* no-op: still navigate even if fetch fails */ }
-            window.location.href = '/';
-        }
-
-        // ── Session tracker (for distribution stats in modal) ────────────
-        const session = { low: 0, mid: 0, high: 0, totalRisk: 0, polls: 0, avgPersons: 0 };
-        let pollTimer = null;
-
-        function startPolling() {
-            async function poll() {
-                try {
-                    const d = await fetch('/api/stats').then(r => r.json());
-                    if (!d.active) return;
-
-                    const tier = getTier(d.status);
-                    const rt = riskTier(d.risk_score);
-                    const total = (d.grid_rows || 1) * (d.grid_cols || 1);
-                    const safe = Math.max(0, total - d.high_cells - d.critical_cells);
-
-                    statusCard.className = `card status-card ${tier}`;
-                    statusIcon.textContent = icons[tier];
-                    statusText.textContent = d.status;
-                    statusText.className = `status-text ${tier}`;
-
-                    riskNumber.textContent = d.risk_score.toFixed(1);
-                    riskNumber.className = `risk-number ${rt}`;
-                    gaugeFill.style.width = `${d.risk_score}%`;
-                    gaugeFill.className = `gauge-fill ${rt}`;
-
-                    fpsBadge.textContent = `FPS: ${d.fps}`;
-                    brandVid.textContent = d.current_video || '—';
-                    els.persons.textContent = d.person_count;
-                    els.fps.textContent = d.fps;
-                    els.rows.textContent = d.grid_rows;
-                    els.cols.textContent = d.grid_cols;
-                    els.safe.textContent = safe;
-                    els.high.textContent = d.high_cells;
-                    els.crit.textContent = d.critical_cells;
-
-                    // ── Crowd Pressure gauge ──────────────────────────────
-                    if (d.avg_pressure !== undefined) {
-                        const p = d.avg_pressure;
-                        const CIRC = 188; // 2π × r=30
-                        const offset = CIRC - (p / 100) * CIRC;
-                        const pfill  = document.getElementById('pressure-fill');
-                        const pnum   = document.getElementById('pressure-num');
-                        const pstat  = document.getElementById('pressure-status');
-                        const pdesc  = document.getElementById('pressure-desc');
-
-                        pfill.style.strokeDashoffset = offset.toFixed(1);
-                        pnum.textContent = Math.round(p);
-
-                        if (p >= 50) {
-                            pfill.style.stroke = '#ef4444';
-                            pstat.className    = 'pressure-status high';
-                            pstat.textContent  = '⚠ Crush Risk';
-                            pdesc.textContent  = 'High density + directional chaos detected. Physical crush pressure is critical.';
-                        } else if (p >= 25) {
-                            pfill.style.stroke = '#f97316';
-                            pstat.className    = 'pressure-status mod';
-                            pstat.textContent  = '⚡ Moderate';
-                            pdesc.textContent  = 'Elevated pressure — crowd is dense with some directional conflict.';
-                        } else {
-                            pfill.style.stroke = '#22c55e';
-                            pstat.className    = 'pressure-status';
-                            pstat.textContent  = 'Safe';
-                            pdesc.textContent  = 'Low density & chaos — no crush risk detected.';
-                        }
-                    }
-
-                    // ── Divergence & Curl ─────────────────────────────────────
-                    if (d.avg_divergence !== undefined) {
-                        const divVal = d.avg_divergence;   // negative = squeeze, positive = dispersing
-                        const divBar  = document.getElementById('div-bar');
-                        const divBadge = document.getElementById('div-badge');
-                        const divDesc = document.getElementById('div-desc');
-
-                        // Map divergence to a 0-100 bar where 50=neutral
-                        // clamp raw value to roughly [-0.5, 0.5] range for the bar
-                        const divPct = Math.min(100, Math.max(0, (divVal + 0.5) / 1.0 * 100));
-                        divBar.style.width = divPct + '%';
-
-                        if (divVal < -0.05) {
-                            // Negative divergence = inward squeeze
-                            divBar.style.background = '#ef4444';
-                            divBadge.style.background = 'rgba(239,68,68,0.15)';
-                            divBadge.style.color = '#ef4444';
-                            divBadge.textContent = '⚠ Squeezing';
-                            divDesc.textContent = 'Crowd converging inward — potential crush zone forming.';
-                        } else if (divVal > 0.05) {
-                            // Positive divergence = dispersing
-                            divBar.style.background = '#22c55e';
-                            divBadge.style.background = 'rgba(34,197,94,0.15)';
-                            divBadge.style.color = '#22c55e';
-                            divBadge.textContent = 'Dispersing';
-                            divDesc.textContent = 'Crowd spreading outward — safe flow detected.';
-                        } else {
-                            divBar.style.background = '#f97316';
-                            divBadge.style.background = 'rgba(249,115,22,0.15)';
-                            divBadge.style.color = '#f97316';
-                            divBadge.textContent = '~ Neutral';
-                            divDesc.textContent = 'Balanced flow — no dominant directional surge.';
-                        }
-                    }
-
-                    if (d.avg_curl !== undefined) {
-                        const curlVal = d.avg_curl;
-                        const curlBar  = document.getElementById('curl-bar');
-                        const curlNum  = document.getElementById('curl-num');
-                        const curlDesc = document.getElementById('curl-desc');
-
-                        // Curl values are always positive (abs magnitude). Scale 0-0.5 → 0-100%
-                        const curlPct = Math.min(100, (curlVal / 0.5) * 100);
-                        curlBar.style.width = curlPct + '%';
-                        curlNum.textContent = curlVal.toFixed(3);
-
-                        if (curlPct > 60) {
-                            curlBar.style.background = '#ef4444';
-                            curlDesc.textContent = 'High rotational turbulence — swirling vortex pattern in crowd.';
-                            curlDesc.style.color = '#ef4444';
-                        } else if (curlPct > 25) {
-                            curlBar.style.background = '#f97316';
-                            curlDesc.textContent = 'Moderate swirl — some rotational conflict at bottleneck edges.';
-                            curlDesc.style.color = '#f97316';
-                        } else {
-                            curlBar.style.background = 'var(--blue)';
-                            curlDesc.textContent = 'No significant rotational swirl detected.';
-                            curlDesc.style.color = 'var(--text-muted)';
-                        }
-                    }
-
-                    // Push to chart
-                    chartLabels.push('');
-                    chartData.push(d.risk_score);
-                    if (chartData.length > MAX_POINTS) { chartLabels.shift(); chartData.shift(); }
-                    riskChart.update();
-
-                    // Accumulate session stats
-                    session.polls++;
-                    session.totalRisk += d.risk_score;
-                    session.avgPersons += d.person_count;
-                    if (rt === 'high') session.high++;
-                    else if (rt === 'mid') session.mid++;
-                    else session.low++;
-
-                    // ── Update calibration card ────────────────────────────
-                    if (d.calib_mode !== undefined) {
-                        const badge   = document.getElementById('calib-badge');
-                        const track   = document.getElementById('calib-progress-track');
-                        const fill    = document.getElementById('calib-progress-fill');
-                        const chipD   = document.getElementById('chip-density');
-                        const chipM   = document.getElementById('chip-motion');
-
-                        chipD.textContent = (d.density_weight ?? 70) + '%';
-                        chipM.textContent = (d.motion_weight  ?? 30) + '%';
-
-                        if (d.calib_status === 'calibrating') {
-                            badge.className = 'calib-status-badge calibrating';
-                            badge.textContent = `⏳ Calibrating… (${d.calib_samples_collected || 0}/${d.calib_sample_target || '?'})`;
-                            track.style.display = 'block';
-                            const pct = Math.min(95, Math.round(
-                                ((d.calib_samples_collected || 0) / (d.calib_sample_target || 100)) * 100
-                            ));
-                            fill.style.width = pct + '%';
-                        } else if (d.calib_status === 'done') {
-                            badge.className = 'calib-status-badge done';
-                            badge.textContent = '✅ Calibrated';
-                            track.style.display = 'none';
-                        } else {
-                            badge.className = 'calib-status-badge preset';
-                            badge.textContent = '⚙ Preset 70/30';
-                            track.style.display = 'none';
-                        }
-                    }
-
-                } catch (_) { }
-            }
-            poll();
-            pollTimer = setInterval(poll, 500);
-        }
-
-        startPolling();
-
-        // ── Theme toggle ────────────────────────────────────────────
-        const themeBtn = document.getElementById('theme-btn');
-        function applyTheme(light) {
-            document.body.classList.toggle('light', light);
-            themeBtn.textContent = light ? '🌙' : '☀️';
-            themeBtn.title = light ? 'Switch to dark mode' : 'Switch to light mode';
-        }
-        function toggleTheme() {
-            const isLight = !document.body.classList.contains('light');
-            localStorage.setItem('crm-theme', isLight ? 'light' : 'dark');
-            applyTheme(isLight);
-        }
-        // Restore saved preference
-        applyTheme(localStorage.getItem('crm-theme') === 'light');
-
-        // ── Calibration toggle ───────────────────────────────────
-        async function toggleCalib(checkbox) {
-            const endpoint = checkbox.checked
-                ? '/api/calibration-mode/on'
-                : '/api/calibration-mode/off';
-            await fetch(endpoint, { method: 'POST' });
-            // Reset chip display immediately
-            if (!checkbox.checked) {
-                document.getElementById('chip-density').textContent = '70%';
-                document.getElementById('chip-motion').textContent  = '30%';
-                const badge = document.getElementById('calib-badge');
-                badge.className   = 'calib-status-badge preset';
-                badge.textContent = '⚙ Preset 70/30';
-                document.getElementById('calib-progress-track').style.display = 'none';
-            } else {
-                const badge = document.getElementById('calib-badge');
-                badge.className   = 'calib-status-badge calibrating';
-                badge.textContent = '⏳ Waiting for next upload…';
-            }
-        }
-
-        // Sync toggle state from server on page load
-        fetch('/api/stats').then(r => r.json()).then(d => {
-            const toggle = document.getElementById('calib-toggle');
-            if (toggle && d.calib_mode !== undefined) {
-                toggle.checked = d.calib_mode;
-            }
-        }).catch(() => {});
-
-        // ── Stop / Cancel ─────────────────────────────────────────────
-        async function stopAnalysis() {
-            document.getElementById('stop-btn').disabled = true;
-            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-
-            try {
-                const res = await fetch('/cancel', { method: 'POST' });
-                const data = await res.json();
-
-                // Compute distribution percentages from our session tracker
-                const total = session.polls || 1;
-                const pctLow = Math.round((session.low / total) * 100);
-                const pctMid = Math.round((session.mid / total) * 100);
-                const pctHigh = Math.round((session.high / total) * 100);
-                const avgRisk = session.polls > 0 ? (session.totalRisk / session.polls).toFixed(1) : '0';
-
-                // Populate modal stats
-                const peakEl = document.getElementById('modal-peak');
-                peakEl.textContent = `${data.peak_risk}`;
-                peakEl.className = `modal-stat-value ${data.peak_risk >= 65 ? 'red' : data.peak_risk >= 35 ? 'orange' : 'green'}`;
-
-                const avgEl = document.getElementById('modal-avg');
-                avgEl.textContent = avgRisk;
-                avgEl.className = `modal-stat-value ${Number(avgRisk) >= 65 ? 'red' : Number(avgRisk) >= 35 ? 'orange' : 'green'}`;
-
-                document.getElementById('modal-duration').textContent = `${data.duration_s}s`;
-                document.getElementById('modal-frames').textContent = data.frames;
-
-                const peakStatEl = document.getElementById('modal-peak-status');
-                const peakTier = data.peak_status.toUpperCase().includes('CRITICAL') ? 'red'
-                    : data.peak_status.toUpperCase().includes('HIGH') ? 'orange' : 'green';
-                peakStatEl.textContent = data.peak_status.replace('CRITICAL RISK', 'CRITICAL').replace('Normal', 'NORMAL');
-                peakStatEl.className = `modal-stat-value ${peakTier}`;
-                peakStatEl.style.fontSize = '0.85rem';
-
-                // Risk distribution bar
-                document.getElementById('dist-green').style.width = `${pctLow}%`;
-                document.getElementById('dist-orange').style.width = `${pctMid}%`;
-                document.getElementById('dist-red').style.width = `${pctHigh}%`;
-                document.getElementById('dist-pct-green').textContent = `${pctLow}%`;
-                document.getElementById('dist-pct-orange').textContent = `${pctMid}%`;
-                document.getElementById('dist-pct-red').textContent = `${pctHigh}%`;
-
-                document.getElementById('modal-overlay').classList.add('active');
-
-
-
-            } catch (err) {
-                alert('Failed to stop: ' + err.message);
-                document.getElementById('stop-btn').disabled = false;
-            }
-        }
-    </script>
+    <script src="/static/js/dashboard.js"></script>
 </body>
 
 </html>
