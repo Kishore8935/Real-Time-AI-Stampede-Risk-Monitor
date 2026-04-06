@@ -91,6 +91,42 @@
             gap: 12px;
         }
 
+        /* ── Profile popup ── */
+        .profile-btn {
+            display: flex; align-items: center; gap: 7px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 20px; padding: 5px 12px 5px 8px;
+            cursor: pointer; font-size: 0.78rem; font-weight: 600; color: var(--text);
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .profile-btn:hover { background: var(--border); border-color: var(--blue); }
+        .profile-avatar {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--blue), var(--blue-b));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.72rem; font-weight: 700; color: #fff; flex-shrink: 0;
+        }
+        .profile-popup-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 200;
+        }
+        .profile-popup-backdrop.open { display: block; }
+        .profile-popup {
+            display: none; position: fixed; top: 58px; right: 20px; z-index: 201;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 14px; padding: 18px 20px; min-width: 220px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+        }
+        .profile-popup.open { display: block; }
+        .pp-email { font-size: 0.80rem; font-weight: 600; color: var(--text); margin-bottom: 4px; word-break: break-all; }
+        .pp-label { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 16px; }
+        .pp-logout {
+            width: 100%; padding: 9px; border-radius: 9px;
+            background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+            color: #ef4444; font-family: 'Inter', sans-serif;
+            font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: background 0.2s;
+        }
+        .pp-logout:hover { background: rgba(239,68,68,0.2); }
+
         .live-badge {
             display: flex;
             align-items: center;
@@ -997,9 +1033,22 @@
                 <button class="stop-btn" id="stop-btn" onclick="stopAnalysis()">
                     ⏹ Stop Analysis
                 </button>
+                <button class="profile-btn" id="profile-btn" onclick="toggleProfilePopup()">
+                    <div class="profile-avatar" id="profile-avatar">?</div>
+                    <span id="profile-label">Account</span>
+                </button>
             </div>
         </header>
 
+        <!-- Profile Popup -->
+        <div class="profile-popup-backdrop" id="profile-backdrop" onclick="closeProfilePopup()"></div>
+        <div class="profile-popup" id="profile-popup">
+            <div class="pp-email" id="pp-email">Loading…</div>
+            <div class="pp-label">Signed in</div>
+            <form action="/api/auth/logout" method="POST">
+                <button class="pp-logout" type="submit">🚪 Sign Out</button>
+            </form>
+        </div>
         <!-- Main layout -->
         <div class="layout">
             <!-- Video -->

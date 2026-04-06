@@ -2,6 +2,28 @@
 // dashboard.js — All JavaScript logic for the live monitoring dashboard
 // =============================================================================
 
+// ── Profile Popup ──────────────────────────────────────────────────────────────
+(async function initProfile() {
+    try {
+        const res  = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const user = await res.json();
+        const email = user.email || '';
+        document.getElementById('pp-email').textContent      = email;
+        document.getElementById('profile-label').textContent = email.split('@')[0];
+        document.getElementById('profile-avatar').textContent = email[0].toUpperCase();
+    } catch (_) {}
+})();
+
+function toggleProfilePopup() {
+    document.getElementById('profile-popup').classList.toggle('open');
+    document.getElementById('profile-backdrop').classList.toggle('open');
+}
+function closeProfilePopup() {
+    document.getElementById('profile-popup').classList.remove('open');
+    document.getElementById('profile-backdrop').classList.remove('open');
+}
+
 // ── Chart.js setup ────────────────────────────────────────────────────────────
 const MAX_POINTS = 120; // ~60 seconds at 500ms polling
 const chartLabels = [];

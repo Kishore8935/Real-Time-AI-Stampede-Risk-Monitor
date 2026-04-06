@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login — Stampede Risk Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #080c14; --surface: #0f1623; --surface2: #141e30;
+            --border: #1e2d45; --text: #e2e8f0; --text-dim: #94a3b8;
+            --text-muted: #475569; --blue: #6366f1; --blue-b: #818cf8;
+            --green: #22c55e; --red: #ef4444; --radius: 16px;
+        }
+        html, body {
+            height: 100%; font-family: 'Inter', sans-serif;
+            background: var(--bg); color: var(--text);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .bg-glow {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background:
+                radial-gradient(ellipse 60% 50% at 30% 20%, rgba(99,102,241,0.12) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 40% at 70% 80%, rgba(34,197,94,0.06) 0%, transparent 60%);
+        }
+        .card {
+            position: relative; z-index: 1;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 40px 36px;
+            width: 100%; max-width: 400px;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+        }
+        .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; justify-content: center; }
+        .brand-icon { font-size: 1.6rem; }
+        .brand-name { font-size: 1rem; font-weight: 700; }
+        h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 6px; text-align: center; }
+        .sub { font-size: 0.82rem; color: var(--text-dim); text-align: center; margin-bottom: 28px; }
+        label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 6px; }
+        input[type="email"], input[type="password"] {
+            width: 100%; padding: 11px 14px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 10px; color: var(--text);
+            font-family: 'Inter', sans-serif; font-size: 0.88rem;
+            outline: none; transition: border-color 0.2s;
+            margin-bottom: 16px;
+        }
+        input:focus { border-color: var(--blue); }
+        .submit-btn {
+            width: 100%; padding: 13px;
+            background: linear-gradient(135deg, var(--blue), var(--blue-b));
+            border: none; border-radius: 10px;
+            font-family: 'Inter', sans-serif; font-size: 0.95rem; font-weight: 700;
+            color: #fff; cursor: pointer;
+            transition: opacity 0.2s, transform 0.15s;
+            box-shadow: 0 4px 20px rgba(99,102,241,0.35);
+            margin-top: 4px;
+        }
+        .submit-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+        .footer-link {
+            text-align: center; margin-top: 20px;
+            font-size: 0.78rem; color: var(--text-dim);
+        }
+        .footer-link a { color: var(--blue-b); text-decoration: none; font-weight: 600; }
+        .footer-link a:hover { text-decoration: underline; }
+        .error-msg {
+            background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+            border-radius: 8px; padding: 10px 14px; font-size: 0.78rem;
+            color: var(--red); margin-bottom: 16px; display: none;
+        }
+        .error-msg.visible { display: block; }
+    </style>
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="card">
+        <div class="brand">
+            <div class="brand-icon">🚦</div>
+            <div class="brand-name">Stampede Risk Monitor</div>
+        </div>
+        <h1>Welcome back</h1>
+        <p class="sub">Sign in to continue to your dashboard</p>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <form id="login-form" action="/api/auth/login" method="POST">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
+
+            <button class="submit-btn" type="submit">Sign In →</button>
+        </form>
+
+        <div class="footer-link">
+            Don't have an account? <a href="/signup">Create one</a>
+        </div>
+    </div>
+
+    <script>
+        // Show error from query param (e.g. ?error=Invalid+email+or+password)
+        const params = new URLSearchParams(window.location.search);
+        const err = params.get('error');
+        if (err) {
+            const el = document.getElementById('error-msg');
+            el.textContent = decodeURIComponent(err);
+            el.classList.add('visible');
+        }
+    </script>
+</body>
+</html>

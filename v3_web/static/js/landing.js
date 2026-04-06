@@ -18,6 +18,28 @@ function toggleTheme() {
 
 applyTheme(localStorage.getItem('crm-theme') === 'light');
 
+// ── Profile Popup ──────────────────────────────────────────────────────────────
+(async function initProfile() {
+    try {
+        const res  = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const user = await res.json();
+        const email = user.email || '';
+        document.getElementById('pp-email').textContent  = email;
+        document.getElementById('profile-label').textContent = email.split('@')[0];
+        document.getElementById('profile-avatar').textContent = email[0].toUpperCase();
+    } catch (_) { /* not critical */ }
+})();
+
+function toggleProfilePopup() {
+    document.getElementById('profile-popup').classList.toggle('open');
+    document.getElementById('profile-backdrop').classList.toggle('open');
+}
+function closeProfilePopup() {
+    document.getElementById('profile-popup').classList.remove('open');
+    document.getElementById('profile-backdrop').classList.remove('open');
+}
+
 // ── Restore last session config (populated when user clicks Go Home) ──────────
 function restoreLastSession() {
     const raw = localStorage.getItem('crm-last-session-config');
@@ -422,25 +444,158 @@ function loadSettings() {
 }
 loadSettings();
 
-// ── AI Prompt History ─────────────────────────────────────────────────────────
+// ── AI Prompt History (DB-backed) ─────────────────────────────────────────────
+// localStorage key kept only for one-time migration detection
 const HISTORY_KEY = 'crm-prompt-history';
-const HISTORY_MAX = 15;
 
-function savePromptHistory(prompt, settings, image = null) {
-    let history = [];
-    try { history = JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch(e) {}
-    history.unshift({ prompt, settings, ts: Date.now(), image: image || null });
-    if (history.length > HISTORY_MAX) history = history.slice(0, HISTORY_MAX);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+// In-memory cache of the last fetched history (used for restore by index)
+let _dbHistory = [];
+
+// ── One-time localStorage → MongoDB migration ─────────────────────────────────
+(async function migrateLocalStorageHistory() {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return;                          // Already migrated or nothing to migrate
+    let items;
+    try { items = JSON.parse(raw); } catch(e) { localStorage.removeItem(HISTORY_KEY); return; }
+    if (!Array.isArray(items) || items.length === 0) { localStorage.removeItem(HISTORY_KEY); return; }
+
+    try {
+        const res = await fetch('/api/prompt-history/migrate', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(items),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            console.log(`[CRM] Migrated ${data.imported} prompt(s) from localStorage → MongoDB.`);
+            localStorage.removeItem(HISTORY_KEY);  // Clear only after confirmed success
+        }
+    } catch (e) {
+        console.warn('[CRM] Migration failed (server offline?) — will retry on next load.', e);
+    }
+})();
+
+// ── Save new prompt to DB (called after successful AI configure) ──────────────
+// Note: the actual DB write now happens server-side in /api/ai-configure.
+// This function is kept as a no-op shim to avoid breaking any existing call sites.
+function savePromptHistory(_prompt, _settings, _image) {
+    // No-op: saving is now handled server-side inside /api/ai-configure → MongoDB
 }
 
-function timeAgo(ts) {
+// ── Shared time formatter ─────────────────────────────────────────────────────
+function timeAgo(isoOrMs) {
+    const ts   = typeof isoOrMs === 'number' ? isoOrMs : new Date(isoOrMs).getTime();
     const diff = Math.floor((Date.now() - ts) / 1000);
     if (diff < 60)    return 'just now';
     if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
     return `${Math.floor(diff/86400)}d ago`;
 }
+
+// ── Modal open/close ──────────────────────────────────────────────────────────
+function openHistoryModal() {
+    document.getElementById('hm-backdrop').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    renderHistoryModal();      // async — fetches from DB
+}
+
+function closeHistoryModal() {
+    document.getElementById('hm-backdrop').classList.remove('open');
+    document.body.style.overflow = '';
+}
+
+function closeHistoryModalIfOutside(e) {
+    if (e.target === document.getElementById('hm-backdrop')) closeHistoryModal();
+}
+
+// ── Render history modal (fetches from DB) ────────────────────────────────────
+async function renderHistoryModal() {
+    const body  = document.getElementById('hm-body');
+    const empty = document.getElementById('hm-empty');
+    const count = document.getElementById('hm-count');
+
+    body.querySelectorAll('.hm-entry').forEach(el => el.remove());
+    count.textContent = '';
+    empty.style.display = '';
+    empty.textContent = '⏳ Loading…';
+
+    try {
+        const res = await fetch('/api/prompt-history');
+        if (!res.ok) throw new Error('Not authenticated');
+        _dbHistory = await res.json();
+    } catch (e) {
+        empty.textContent = '⚠️ Could not load history.';
+        return;
+    }
+
+    count.textContent = _dbHistory.length ? `${_dbHistory.length} saved` : '';
+    if (_dbHistory.length === 0) { empty.textContent = 'No saved prompts yet. Ask the AI assistant to get started.'; return; }
+    empty.style.display = 'none';
+
+    _dbHistory.forEach((entry, i) => {
+        // ai_response contains the Gemini config blob; settings contains slider snapshot (from migration)
+        const s = entry.ai_response || {};
+
+        // Build chips — handle both Gemini config format and old slider snapshot format
+        const densityPct = s.density_bias != null
+            ? Math.round(s.density_bias * 100)
+            : (s.bias ?? '?');
+        const motionPct  = s.density_bias != null ? (100 - Math.round(s.density_bias * 100)) : (100 - (s.bias ?? 50));
+        const chips = [
+            `Density ${densityPct}% / Motion ${motionPct}%`,
+            `Pressure ${s.pressure_enabled ?? s.pressure ? 'ON' : 'OFF'}`,
+            `Grid: ${s.grid_size ?? s.grid ?? '?'}`,
+            s.high_score_thr != null ? `Alert @ ${Math.round(s.high_score_thr*100)}% / ${Math.round(s.crit_score_thr*100)}%`
+                                     : `Alert @ ${s.highThr ?? '?'}% / ${s.critThr ?? '?'}%`,
+        ].map(c => `<span class="hm-chip">${c}</span>`).join('');
+
+        const thumbHtml = entry.image
+            ? `<img class="hm-thumb" src="${entry.image}" alt="context" />`
+            : `<div class="hm-thumb-placeholder">🖼️</div>`;
+
+        const div = document.createElement('div');
+        div.className = 'hm-entry';
+        div.innerHTML = `
+            <div class="hm-entry-top">
+                ${thumbHtml}
+                <div class="hm-entry-meta">
+                    <div class="hm-prompt-text">${entry.prompt_text}</div>
+                    <div class="hm-ts">${timeAgo(entry.created_at)}</div>
+                </div>
+            </div>
+            <div class="hm-chips">${chips}</div>
+            <div class="hm-actions">
+                <button class="hm-restore-btn" onclick="restoreFromHistoryModal(${i})">Restore Settings →</button>
+            </div>
+        `;
+        body.appendChild(div);
+    });
+}
+
+// ── Restore from modal (uses in-memory _dbHistory) ───────────────────────────
+function restoreFromHistoryModal(index) {
+    const entry = _dbHistory[index];
+    if (!entry) return;
+
+    // Map DB ai_response format back to slider settings format
+    const r = entry.ai_response || {};
+    const settings = {
+        bias:     r.density_bias != null ? Math.round(r.density_bias * 100) : (r.bias ?? 70),
+        pressure: r.pressure_enabled ?? r.pressure ?? true,
+        calib:    false,
+        grid:     r.grid_size ?? r.grid ?? 'standard',
+        thresh:   r.thresh_critical ?? r.thresh ?? 8,
+        highThr:  r.high_score_thr != null ? Math.round(r.high_score_thr * 100) : (r.highThr ?? 50),
+        critThr:  r.crit_score_thr != null ? Math.round(r.crit_score_thr * 100) : (r.critThr ?? 75),
+        alpha:    r.overlay_alpha   != null ? Math.round(r.overlay_alpha   * 100) : (r.alpha  ?? 20),
+        hyst:     r.hysteresis ?? r.hyst ?? 8,
+    };
+    applyAllSettings(settings);
+    closeHistoryModal();
+    const s = document.getElementById('ai-status');
+    if (s) { s.style.color = 'var(--green)'; s.textContent = '✅ Settings restored from history.'; setTimeout(() => s.textContent = '', 2500); }
+}
+
 
 function renderPromptHistory() {
     const drawer = document.getElementById('history-drawer');

@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, UploadFile, File, Form, Request, Depends
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -537,17 +537,30 @@ def processing_thread():
 # =============================================================================
 # FastAPI
 # =============================================================================
+
+# Make v3_web/ importable for the auth sub-modules
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from fastapi.responses import RedirectResponse as _Redirect
+from routes.auth import router as auth_router, get_current_user
+
 app = FastAPI(title="Crowd Risk Monitor")
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.include_router(auth_router)  # mounts /login /signup /api/auth/*
 
 
 @app.get("/")
-def landing():
+async def landing(user=Depends(get_current_user)):
+    if not user:
+        return _Redirect(url="/login")
     return FileResponse(os.path.join(BASE_DIR, "templates", "landing.html"))
 
 
 @app.get("/dashboard")
-def dashboard():
+async def dashboard(user=Depends(get_current_user)):
+    if not user:
+        return _Redirect(url="/login")
     return FileResponse(os.path.join(BASE_DIR, "templates", "dashboard.html"))
 
 
