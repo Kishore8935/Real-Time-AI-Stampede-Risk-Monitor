@@ -14,7 +14,14 @@ import sys
 import os
 import math
 import time
+import asyncio
 import threading
+
+# ── Windows asyncio fix ───────────────────────────────────────────────────────
+# Prevents the noisy CancelledError + KeyboardInterrupt traceback spam
+# that Uvicorn produces on Windows when you press Ctrl+C to stop the server.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import cv2
 import numpy as np
@@ -894,4 +901,8 @@ if __name__ == "__main__":
     t = threading.Thread(target=processing_thread, daemon=True)
     t.start()
     print("[v3] Dashboard → http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
+    except KeyboardInterrupt:
+        # Ctrl+C pressed — clean exit, suppress the noisy Windows traceback
+        print("\n[v3] Server stopped.")
