@@ -325,15 +325,6 @@ Static density alone cannot detect a stampede in the early stages — 100 people
 
 ---
 
-## 👨‍💻 Team
-
-Developed as a Final Year Capstone Engineering Project.
-
-| Name | Role |
-|---|---|
-| <!-- Your Name --> | AI Engine & Backend Architecture |
-| <!-- Teammate 2 --> | Frontend Dashboard & UI/UX |
-| <!-- Teammate 3 --> | Alert Systems & Database Design |
 
 ---
 
