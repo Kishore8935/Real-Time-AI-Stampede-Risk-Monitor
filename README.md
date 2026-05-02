@@ -21,6 +21,12 @@
 
 <!-- SCREENSHOT: Replace the block below with your actual banner/hero screenshot of the dashboard -->
 > 📸 **[SCREENSHOT REQUIRED]** — Insert a full-width screenshot of the main dashboard here (showing live video feed with AI overlays, telemetry panels, and risk indicator).
+> <img width="1918" height="1032" alt="image" src="https://github.com/user-attachments/assets/d763e711-7793-4be3-8fb0-728a83b5cfdd" />
+<img width="1916" height="1026" alt="image" src="https://github.com/user-attachments/assets/5374a0d7-4c04-4e6f-8a35-58f73440ffcf" />
+
+
+>
+
 
 ---
 
@@ -175,24 +181,17 @@ graph TD
 ### 🖥️ Main Security Dashboard
 <!-- SCREENSHOT REQUIRED: Full dashboard view — include the live video stream panel with AI bounding boxes drawn on people, the risk level indicator (color-coded), density percentage display, and the telemetry sidebar. -->
 > 📸 **[SCREENSHOT REQUIRED]** — Main dashboard: live MJPEG stream with AI overlays + risk panels
+> 
 
 ---
 
 ### 🚨 Critical Alert in Action
-<!-- SCREENSHOT REQUIRED: Side-by-side or split — left: the dashboard showing "CRITICAL" risk level in red. Right: an SMS received on a phone (or a Windows toast notification) showing the alert message. -->
+
 > 📸 **[SCREENSHOT REQUIRED]** — Critical alert triggered: dashboard + SMS/push notification received
+>  <img width="722" height="491" alt="P1" src="https://github.com/user-attachments/assets/812ae59c-7284-415b-8222-b66f7c3d6cb1" />
+<img width="1424" height="733" alt="image" src="https://github.com/user-attachments/assets/350df39c-cf51-4627-9f8c-71b9fa39b810" />
+<img width="1671" height="987" alt="image" src="https://github.com/user-attachments/assets/dfedaa72-59ad-4d50-a033-fbcbd50cb63f" />
 
----
-
-### 🔐 Secure Login & Signup Portal
-<!-- SCREENSHOT REQUIRED: The login page and/or signup page showing the clean, styled authentication UI. -->
-> 📸 **[SCREENSHOT REQUIRED]** — Authentication portal (login + signup screens)
-
----
-
-### 📊 Live Telemetry & Historical Logs
-<!-- SCREENSHOT REQUIRED: The telemetry section of the dashboard — showing graphed historical density data, timestamps of past alerts, and the system status panel. -->
-> 📸 **[SCREENSHOT REQUIRED]** — Historical telemetry logs and density trend graph
 
 ---
 
