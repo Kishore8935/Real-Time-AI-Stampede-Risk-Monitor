@@ -181,14 +181,13 @@ graph TD
 ### 🖥️ Main Security Dashboard
 <!-- SCREENSHOT REQUIRED: Full dashboard view — include the live video stream panel with AI bounding boxes drawn on people, the risk level indicator (color-coded), density percentage display, and the telemetry sidebar. -->
 > 📸 **[SCREENSHOT REQUIRED]** — Main dashboard: live MJPEG stream with AI overlays + risk panels
-> 
+> <img width="1440" height="786" alt="image" src="https://github.com/user-attachments/assets/24a3e7c7-168f-48d3-b7cb-2a26964edb1e" />
 
 ---
 
 ### 🚨 Critical Alert in Action
 
 > 📸 **[SCREENSHOT REQUIRED]** — Critical alert triggered: dashboard + SMS/push notification received
-<img width="1440" height="786" alt="image" src="https://github.com/user-attachments/assets/24a3e7c7-168f-48d3-b7cb-2a26964edb1e" />
 
 <img width="722" height="491" alt="P1" src="https://github.com/user-attachments/assets/812ae59c-7284-415b-8222-b66f7c3d6cb1" />
 <img width="1424" height="733" alt="image" src="https://github.com/user-attachments/assets/350df39c-cf51-4627-9f8c-71b9fa39b810" />
