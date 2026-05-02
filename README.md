@@ -188,7 +188,9 @@ graph TD
 ### 🚨 Critical Alert in Action
 
 > 📸 **[SCREENSHOT REQUIRED]** — Critical alert triggered: dashboard + SMS/push notification received
->  <img width="722" height="491" alt="P1" src="https://github.com/user-attachments/assets/812ae59c-7284-415b-8222-b66f7c3d6cb1" />
+<img width="1440" height="786" alt="image" src="https://github.com/user-attachments/assets/24a3e7c7-168f-48d3-b7cb-2a26964edb1e" />
+
+<img width="722" height="491" alt="P1" src="https://github.com/user-attachments/assets/812ae59c-7284-415b-8222-b66f7c3d6cb1" />
 <img width="1424" height="733" alt="image" src="https://github.com/user-attachments/assets/350df39c-cf51-4627-9f8c-71b9fa39b810" />
 <img width="1671" height="987" alt="image" src="https://github.com/user-attachments/assets/dfedaa72-59ad-4d50-a033-fbcbd50cb63f" />
 
